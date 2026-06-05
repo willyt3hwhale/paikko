@@ -21,6 +21,20 @@ export default function CalculatorPage() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Don't hijack keystrokes while the user is typing in a form field
+      // (e.g. the paikko report textarea) or anywhere inside the paikko UI -
+      // otherwise digits/operators meant for an input get eaten by the calculator.
+      const el = e.target as HTMLElement | null;
+      if (
+        el &&
+        (el.isContentEditable ||
+          el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.tagName === "SELECT" ||
+          el.closest("[data-paikko-ui]"))
+      ) {
+        return;
+      }
       const s = usePaikkoStore.getState();
       const { key } = e;
       if (key >= "0" && key <= "9") {
