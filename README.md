@@ -1,4 +1,6 @@
-# vibend
+# paikko
+
+*Point at the bug. The agent fixes it.*
 
 A web framework for AI coding that flips the loop: instead of describing bugs to an
 agent from the outside, you **use the app like a user**, hit a report button the moment
