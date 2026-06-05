@@ -1,15 +1,31 @@
 # paikko agent runner (v0)
 
-*The runner is "Claude Code in a loop." This file is its spec - the loop, the
-sub-agents, the seams it must not cross, and the contract it speaks.*
+*The runner is "Claude Code in a loop" - run as a SKILL inside an interactive
+Claude Code (TUI) session, NOT a headless `claude -p` script. This file is its
+spec - the loop, the sub-agents, the seams it must not cross, and the contract it
+speaks. The executable form of this spec is the `/paikko-run` skill at
+`.claude/skills/paikko-run/SKILL.md`; this document is the design behind it.*
 
-The runner does not live in the app. It is an outside process that polls the
-ticket queue, pulls one ticket's bundle, dispatches a fix and a verify, opens a
-preview, and posts the outcome back into the ticket thread - all through the same
-HTTP surface the in-app UI uses. The **main loop never edits code itself**; it
-orchestrates. Fixing happens only inside the `fix-agent` sub-agent. This keeps
-the main context small (it carries the head, not diffs) and makes each fix a
-clean, inspectable unit.
+## Execution model: a TUI skill, not a headless process
+
+The runner is **not** an outside `claude -p` daemon. The user invokes
+`/paikko-run` inside their interactive Claude Code session, in the paikko repo,
+with the dev server (`npm run preview`) already running. The skill drives the
+loop on the user's TUI subscription - a headless `claude -p` script would bill as
+API and defeats the point.
+
+The **interactive session IS the main loop.** It polls the ticket queue, pulls
+one ticket's bundle, dispatches a fix and a verify, parks the ticket in
+`reviewing`, and posts the outcome back into the ticket thread - all through the
+same HTTP surface the in-app UI uses. The **main loop never edits code itself**;
+it orchestrates. Fixing happens only inside a `fix-agent` sub-agent (spawned via
+the Agent tool); verification only inside a `verify-agent` sub-agent. This keeps
+the main TUI context small (it carries the head, not diffs and build logs) and
+makes each fix a clean, inspectable unit.
+
+The skill processes the queue **until it is empty**, then stops and offers to
+re-run (a `/loop` wrapper can re-poll on a cadence). It does not busy-wait; it
+does not block on a human (`reviewing` is parked).
 
 ---
 
@@ -47,9 +63,12 @@ All imports are from `@/lib/contract`. No shape is redefined here.
 
 ## HTTP surface
 
-Base URL from `PAIKKO_BASE_URL` (default `http://localhost:3000`). All ticket
+Base URL is the running dev server (default `http://localhost:8787`, the
+`npm run preview` origin; override if the user gave you another). All ticket
 routes are App-Router handlers under `app/api/**` and are therefore wrapped in
-`withCapture` (the seam guard enforces this; the runner just consumes them).
+`withCapture` (the seam guard enforces this; the runner just consumes them). The
+skill issues these as plain `curl` calls - see `.claude/skills/paikko-run/SKILL.md`
+for the exact method/path/body of every transition.
 
 | Purpose | Call |
 |---|---|
@@ -75,30 +94,35 @@ ordered trail. Parallelism is a v1 concern.
 ```
 loop:
   1. POLL      GET /api/tickets?status=open
-               -> parse[]  -> if empty: sleep(POLL_INTERVAL), continue
+               -> parse[]  -> if empty: STOP (report "queue empty", offer re-run)
   2. PICK      oldest by createdAt  -> ticket id T
-  3. CLAIM     PATCH /api/tickets/T { status: "reproducing" }
-               (claim early so a second runner / the UI sees it's being worked)
+  3. CLAIM     PATCH /api/tickets/T { status: "reproducing", message }
+               (claim early so a second runner / the UI sees it's being worked;
+                the same PATCH posts the "picked up" thread note)
   4. PULL      GET /api/tickets/T  -> head = TicketHeadSchema.parse(body)
   5. TRIAGE    read head.report + head.thread + head.artifacts (summaries only).
                Decide which artifacts (if any) the fix needs - see "Artifact
                triage". Most tickets need ZERO fetches.
   6. FETCH     for each needed name: GET entry.ref
                -> ArtifactPayloadSchemas[name].parse(payload)
-  7. BRANCH    create branch  paikko/ticket-<T>  (branch-per-ticket)
-  8. FIX       dispatch fix-agent (sub) with the head + fetched payloads.
-               It patches on the branch. Main context never edits code.
-  9. VERIFY    dispatch verify-agent (sub). It reviews the diff, runs
-               `npm run lint:seams`, builds/type-checks, and judges correctness.
+  7. FIX       spawn fix-agent (sub-agent via the Agent tool) with the head +
+               fetched payloads. It patches app/calc/**. Main context never edits.
+  8. VERIFY    spawn verify-agent (sub-agent). It reviews the diff, runs
+               `npm run lint:seams` + `npx tsc --noEmit`, and judges correctness.
                -> outcome: pass | needs_info | reject(reason)
- 10. ROUTE     pass        -> open preview, PATCH status: "reviewing", post msg
-               needs_info  -> PATCH status: "needs_info", post question
-               reject      -> post reason, re-dispatch fix-agent (bounded retries)
- 11. NEXT      continue loop (the ticket is now parked in "reviewing" or
+  9. ROUTE     pass        -> PATCH status: "reviewing" + summary msg (PARKED)
+               needs_info  -> PATCH status: "needs_info" + concrete question
+               reject      -> re-dispatch fix-agent (bounded retries); if still
+                              failing, route needs_info and move on
+ 10. NEXT      continue loop (the ticket is now parked in "reviewing" or
                "needs_info"; the loop never blocks waiting on a human)
+STOP when the queue is empty.
 ```
 
-`POLL_INTERVAL` default 30s; `MAX_FIX_RETRIES` default 2 (step 10 reject path).
+`MAX_FIX_RETRIES` default 2 (step 9 reject path). There is no `POLL_INTERVAL`
+sleep: the skill processes until the queue is empty and stops. To re-poll for
+newly-filed tickets, the user re-invokes `/paikko-run` (optionally under `/loop`
+on a cadence) - it does not busy-wait inside one invocation.
 
 ### Why claim before pull
 
@@ -141,16 +165,16 @@ Pass only the fetched payloads into the fix-agent. Never dump all six.
 
 ## Sub-agents
 
-The main loop is a dispatcher. It holds the head and the routing decisions; it
-spawns two sub-agents per ticket and consumes their structured results. Keeping
-the work in sub-agents is what keeps the main context from filling with diffs and
-build logs over a long queue.
+The main TUI loop is a dispatcher. It holds the head and the routing decisions;
+it spawns two sub-agents (via the Agent tool) per ticket and consumes their
+structured results. Keeping the work in sub-agents is what keeps the main context
+from filling with diffs and build logs over a long queue.
 
 ### fix-agent (sub)
 
 **Input**: the `TicketHead` + exactly the artifact payloads triage selected.
-**Job**: reproduce mentally from the bundle, then patch the code on branch
-`paikko/ticket-<T>`.
+**Job**: reproduce mentally from the bundle, then patch the calculator code under
+`app/calc/**` in the working tree.
 **Must**:
 - Treat artifacts as a *photograph* - immutable repro state, not a live system.
   Do not re-fetch or assume current state differs.
@@ -163,12 +187,12 @@ build logs over a long queue.
   second store, Redux, or a context-as-store. Never strip the provenance plugin.
   (The seam guard will fail the build otherwise; do not fight it.)
 - Keep the diff minimal and scoped to the ticket. No drive-by refactors.
-**Output**: a branch with commits + a short summary of the change and which files
-it touched. No status changes, no thread posts - those are the main loop's job.
+**Output**: a short summary of the change and which files it touched. No status
+changes, no thread posts - those are the main loop's job.
 
 ### verify-agent (sub)
 
-**Input**: the ticket head + the fix-agent's branch/diff.
+**Input**: the ticket head + the fix-agent's diff.
 **Job**: judge whether the fix is correct and seam-clean. This is the LLM
 counterpart to the seam guard: the **guard is mechanical and binary** (did a seam
 get bypassed - yes/no), the **verify-agent judges correctness** (does this
@@ -177,7 +201,7 @@ and both must be satisfied.
 **Must**:
 - Run `npm run lint:seams` and **treat a non-zero exit as a hard reject** - a
   seam was bypassed; bounce it back to fix-agent with the guard's output.
-- Type-check / build (`npm run build` or `tsc --noEmit`); a failure is a reject.
+- Type-check (`npx tsc --noEmit`); a failure is a reject.
 - Re-read the report and confirm the diff plausibly addresses *that* bug, not a
   different one.
 - If the bundle is insufficient to know the fix is right (missing repro detail),
@@ -187,13 +211,14 @@ mutates state.
 
 ---
 
-## Preview-per-ticket
+## Reviewing the fix
 
-On a `pass`, open an isolated preview for the branch (`paikko/ticket-<T>`) before
-flipping to `reviewing`, so the human reviews a running build, not a diff. v0:
-whatever preview mechanism the deploy target offers, keyed by the branch name so
-each ticket gets its own URL. Put the preview URL into the thread message posted
-in step 10 so the reviewer can click straight through from the in-app board.
+On a `pass`, the fix is in the working tree under `app/calc/**`. The runner flips
+the ticket to `reviewing` and posts a change summary telling the human how to see
+it: rebuild/refresh the calculator and re-test, then Accept or Reject from the
+in-app review UI. v0 reviews the running local build (the same `npm run preview`
+dev server the runner talks to); a per-deploy preview URL is a v1 concern. The
+thread message is the click-through from the in-app board.
 
 ---
 
@@ -204,9 +229,10 @@ The runner only ever drives these edges (mirror of the README state machine):
 - `open` -> `reproducing` - on claim (step 3).
 - `reproducing` -> `needs_info` - repro/verify could not proceed; a question is
   posted. Parked; the loop moves on.
-- `reproducing` -> `reviewing` - fix passed verify + preview is up. **Parked,
-  non-blocking**: the runner does NOT wait for the human. It posts the preview
-  link and the change summary, then continues to the next ticket.
+- `reproducing` -> `reviewing` - fix passed verify (`tsc --noEmit` +
+  `lint:seams` both clean). **Parked, non-blocking**: the runner does NOT wait
+  for the human. It posts the change summary + how to re-test, then continues to
+  the next ticket.
 
 The runner never writes `closed`. Accept/verify-to-close and reject are
 **human** actions taken from the in-app UI:
@@ -229,8 +255,8 @@ prior agent message and a reviewer rejection:
   The rejection comment is the most important signal for the retry.
 - Do not repeat the rejected approach; the thread is the memory that prevents a
   loop of the same wrong fix.
-- The branch `paikko/ticket-<T>` is reused (the work continues on it); the
-  preview refreshes on the same per-ticket URL.
+- The work continues in the same working tree; the human re-reviews the rebuilt
+  calculator after the new fix lands.
 
 This is why the head carries the full `thread` and not just the head fields: the
 conversation *is* the agent's working memory across review cycles.
@@ -255,10 +281,12 @@ The server stamps `id` and `at`; the runner sends only `{ by, text }`.
 1. **Main context never edits code.** Only `fix-agent` patches. The loop
    orchestrates and posts.
 2. **Validate every wire payload** with the contract's zod schema before use.
-3. **Branch-per-ticket, preview-per-ticket**, keyed by ticket id.
+3. **Run as a TUI skill, not headless.** `/paikko-run` drives the loop inside the
+   interactive session; never a `claude -p` daemon.
 4. **`reviewing` is parked and non-blocking** - never wait on a human inside the
    loop.
 5. **Seams are sacred.** A `lint:seams` failure is a hard stop for that fix; the
-   runner does not merge or preview a seam-breaking branch.
+   runner does not park a seam-breaking fix in `reviewing`. Never flip to
+   `reviewing` unless `tsc --noEmit` and `lint:seams` both pass clean.
 6. **Triage before fetch.** Default to zero artifact fetches; pull only what the
    summary says the fix needs.

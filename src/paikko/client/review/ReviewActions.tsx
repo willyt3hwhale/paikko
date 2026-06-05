@@ -32,6 +32,20 @@ export function ReviewActions({
   const [pending, startTransition] = useTransition();
 
   const isClosed = ticket.status === "closed";
+  // Accept (-> closed) and Reject (-> reproducing) are only legal edges out of
+  // `reviewing` in the state machine (see store.ts TRANSITIONS). For the other
+  // non-closed states the agent still owns the ticket, so the reviewer can only
+  // Reply to the thread.
+  const canReview = ticket.status === "reviewing";
+
+  // A short status line for the non-reviewing, non-closed states, telling the
+  // reviewer what the ticket is waiting on instead of offering Accept/Reject.
+  const waitingFor: string | null =
+    ticket.status === "needs_info"
+      ? "The agent needs more info - reply below."
+      : ticket.status === "open" || ticket.status === "reproducing"
+        ? "Waiting for the agent to propose a fix…"
+        : null;
 
   function fail(err: unknown) {
     setError(
@@ -88,45 +102,55 @@ export function ReviewActions({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={accept}
-          disabled={pending || isClosed}
-          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Accept &amp; close
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setMode((m) => (m === "reject" ? "none" : "reject"));
-            setError(null);
-          }}
-          disabled={pending || isClosed}
-          className={`rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-            mode === "reject"
-              ? "bg-red-600 text-white hover:bg-red-700"
-              : "border border-red-300 text-red-700 hover:bg-red-50"
-          }`}
-        >
-          Reject
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setMode((m) => (m === "reply" ? "none" : "reply"));
-            setError(null);
-          }}
-          disabled={pending}
-          className={`rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-            mode === "reply"
-              ? "bg-neutral-800 text-white hover:bg-neutral-900"
-              : "border border-neutral-300 text-neutral-700 hover:bg-neutral-50"
-          }`}
-        >
-          Reply
-        </button>
+        {canReview && (
+          <button
+            type="button"
+            onClick={accept}
+            disabled={pending}
+            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Accept &amp; close
+          </button>
+        )}
+        {canReview && (
+          <button
+            type="button"
+            onClick={() => {
+              setMode((m) => (m === "reject" ? "none" : "reject"));
+              setError(null);
+            }}
+            disabled={pending}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              mode === "reject"
+                ? "bg-red-600 text-white hover:bg-red-700"
+                : "border border-red-300 text-red-700 hover:bg-red-50"
+            }`}
+          >
+            Reject
+          </button>
+        )}
+        {!isClosed && (
+          <button
+            type="button"
+            onClick={() => {
+              setMode((m) => (m === "reply" ? "none" : "reply"));
+              setError(null);
+            }}
+            disabled={pending}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              mode === "reply"
+                ? "bg-neutral-800 text-white hover:bg-neutral-900"
+                : "border border-neutral-300 text-neutral-700 hover:bg-neutral-50"
+            }`}
+          >
+            Reply
+          </button>
+        )}
       </div>
+
+      {waitingFor && (
+        <p className="text-sm text-neutral-400">{waitingFor}</p>
+      )}
 
       {isClosed && (
         <p className="text-sm text-neutral-400">
@@ -134,7 +158,7 @@ export function ReviewActions({
         </p>
       )}
 
-      {(mode === "reject" || mode === "reply") && (
+      {((mode === "reject" && canReview) || mode === "reply") && (
         <div className="flex flex-col gap-2">
           <textarea
             value={text}
