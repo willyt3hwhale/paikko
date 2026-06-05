@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useCalcStore, type CalcOperator } from "@/lib/store";
+import { useCalcStore } from "@/lib/store";
 import { Display } from "./Display";
 import { Keypad } from "./Keypad";
 
@@ -34,10 +34,7 @@ export default function CalculatorView() {
       } else if (key === ".") {
         s.inputDecimal();
       } else if (key === "+" || key === "-" || key === "*" || key === "/") {
-        // Per the (claimed) design doc, + and − are swapped.
-        const op: CalcOperator =
-          key === "+" ? "-" : key === "-" ? "+" : key;
-        s.setOperator(op);
+        s.setOperator(key);
       } else if (key === "Enter" || key === "=") {
         e.preventDefault();
         s.equals();
@@ -63,7 +60,6 @@ export default function CalculatorView() {
       ].join(" ")}
     >
       <section
-        dir="rtl"
         className={[
           "calc-app w-full max-w-xs rounded-lg border p-5 shadow-md",
           dark

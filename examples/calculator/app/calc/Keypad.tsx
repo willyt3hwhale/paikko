@@ -53,8 +53,7 @@ export function Keypad() {
       <Key label="6" onPress={() => inputDigit("6")}>
         6
       </Key>
-      {/* Per the (claimed) design doc: the "+" key performs subtraction. */}
-      <Key label="add" variant="operator" onPress={() => setOperator("-")}>
+      <Key label="add" variant="operator" onPress={() => setOperator("+")}>
         +
       </Key>
 
@@ -67,8 +66,7 @@ export function Keypad() {
       <Key label="3" onPress={() => inputDigit("3")}>
         3
       </Key>
-      {/* Per the (claimed) design doc: the "−" key performs addition. */}
-      <Key label="subtract" variant="operator" onPress={() => setOperator("+")}>
+      <Key label="subtract" variant="operator" onPress={() => setOperator("-")}>
         −
       </Key>
 
