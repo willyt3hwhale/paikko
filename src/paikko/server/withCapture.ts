@@ -37,14 +37,8 @@
  * still served normally; we synthesize ids so capture never blocks a request.
  */
 
-import {
-  drainSession,
-  finish,
-  setStatus,
-  setThrew,
-  startTrace,
-} from "./sessionTrace";
-import type { TraceArtifact, TraceRequest } from "@/lib/contract";
+import { finish, setStatus, setThrew, startTrace } from "./sessionTrace";
+import { appendToSessionDO, drainSessionDO } from "./sessionTraceClient";
 
 /** Header carrying the frontend-generated spine id for this request. */
 export const TRACE_HEADER = "x-paikko-trace";
@@ -109,15 +103,21 @@ export function withCapture<
         try {
           const response = await handler(request, context);
           setStatus(readStatus(response));
-          finish();
+          // finish() freezes the request; we then write it to the session's
+          // Durable Object so the report drain (possibly a different isolate)
+          // can find it. Append is best-effort and never throws.
+          const finished = finish();
+          if (finished) await appendToSessionDO(sessionId, finished);
           echoHeaders(response, traceId, sessionId);
           return response;
         } catch (err) {
-          // Capture the throw, emit the (failed) trace, then re-throw so Next's
-          // error handling and the route's own semantics are preserved.
+          // Capture the throw, emit the (failed) trace to the session DO, then
+          // re-throw so Next's error handling and the route's own semantics are
+          // preserved.
           setThrew(err);
           setStatus(errorStatus(err));
-          finish();
+          const finished = finish();
+          if (finished) await appendToSessionDO(sessionId, finished);
           throw err;
         }
       },
@@ -127,14 +127,15 @@ export function withCapture<
 
 /**
  * Assemble the `trace` artifact for a finished capture session by draining its
- * buffered requests. The report bundle builder calls this when a user files a
+ * Durable Object buffer. The report bundle builder calls this when a user files a
  * report, to attach the backend side of the interaction. Returns null if nothing
- * was captured for the session.
+ * was captured for the session. Async now: the buffer lives in the SessionTrace
+ * DO (cross-isolate), so draining it is a DO fetch.
  */
-export function buildTraceArtifact(sessionId: string): TraceArtifact | null {
-  const requests: TraceRequest[] = drainSession(sessionId);
-  if (requests.length === 0) return null;
-  return { sessionId, requests };
+export async function buildTraceArtifact(
+  sessionId: string,
+): Promise<import("@/lib/contract").TraceArtifact | null> {
+  return drainSessionDO(sessionId);
 }
 
 /* ------------------------------------------------------------------ */

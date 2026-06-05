@@ -5,9 +5,17 @@
 // matching zod schema in the contract before it is written/read.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // driverAdapters is required to run Prisma through the @prisma/adapter-d1
+  // driver adapter on Cloudflare Workers (the D1 binding comes from the request
+  // env, not a connection string). Preview feature in Prisma 5.x.
+  previewFeatures = ["driverAdapters"]
 }
 
+// Provider stays "sqlite": D1 IS SQLite, and the adapter speaks the sqlite
+// dialect. The `url` is only used by the Prisma CLI for local tooling
+// (migrate diff, studio). At runtime the connection is the D1 binding supplied
+// via the adapter, so DATABASE_URL is irrelevant on Workers.
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")

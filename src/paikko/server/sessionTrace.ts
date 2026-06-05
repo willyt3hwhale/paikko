@@ -18,8 +18,19 @@
  * A single context maps 1:1 to a {@link TraceRequest}. We carry the spine ids
  * (`traceId` from the inbound `x-paikko-trace` header, `sessionId` for the capture
  * session) plus the mutable accumulators (`queries`, `threw`, `status`). On
- * {@link finish} we freeze it into a contract-shaped {@link TraceRequest} and hand
- * it to the registered sink.
+ * {@link finish} we freeze it into a contract-shaped {@link TraceRequest} and
+ * return it; {@link withCapture} then writes it to the session's Durable Object.
+ *
+ * ## Where the buffer went (Workers port)
+ *
+ * This module used to also own the cross-request buffer: a module-level
+ * `Map<sessionId, TraceRequest[]>` that `finish()` appended to and the report
+ * route drained. On Cloudflare Workers that buffer cannot live here - isolates are
+ * ephemeral and the report drain may hit a different isolate than the one that
+ * captured. The buffer now lives in the `SessionTrace` Durable Object (see
+ * `sessionTraceDO.ts` + `sessionTraceClient.ts`). This module keeps ONLY the
+ * intra-request concern: AsyncLocalStorage accumulation of one request's
+ * TraceRequest. `node:async_hooks` is available on Workers under `nodejs_compat`.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -51,32 +62,15 @@ export interface TraceContext {
   startedAtMs: number;
 }
 
-/** A sink receives each finished request. Default sink buffers per session. */
+/** A sink receives each finished request. Optional fan-out hook, no-op by default. */
 export type TraceSink = (request: TraceRequest) => void;
 
 const storage = new AsyncLocalStorage<TraceContext>();
 
-/**
- * In-memory buffer of finished requests, keyed by sessionId. The frontend's
- * report bundle assembly reads this (via {@link drainSession}) to build the
- * `trace` artifact. This is deliberately process-local and ephemeral: a trace is a
- * photograph taken at report time, not durable state.
- */
-const sessionBuffers = new Map<string, TraceRequest[]>();
-
-// The session buffer is fed directly by finish() via defaultSink (which knows the
-// sessionId). This pluggable sink is an additional fan-out hook, no-op by default.
+// Optional fan-out hook for finished requests (e.g. to mirror traces elsewhere).
+// The durable per-session buffering now happens in the SessionTrace Durable
+// Object via withCapture; this stays as an escape hatch and is a no-op by default.
 let sink: TraceSink = () => {};
-
-/** Default sink: append the request to its session buffer. */
-function defaultSink(sessionId: string, request: TraceRequest): void {
-  let buf = sessionBuffers.get(sessionId);
-  if (!buf) {
-    buf = [];
-    sessionBuffers.set(sessionId, buf);
-  }
-  buf.push(request);
-}
 
 /** Override the sink (e.g. to forward finished requests elsewhere). */
 export function setTraceSink(next: TraceSink): void {
@@ -144,8 +138,10 @@ export function setThrew(threw: unknown): void {
 
 /**
  * Freeze the active context into a contract-shaped {@link TraceRequest}, validate
- * it, hand it to the sink, and return it. Called by {@link withCapture} once the
- * handler settles. No-op-safe: returns null outside a trace.
+ * it, hand it to the (optional) sink, and return it. Called by {@link withCapture}
+ * once the handler settles; the caller is responsible for persisting the returned
+ * request to the session's Durable Object. No-op-safe: returns null outside a
+ * trace.
  */
 export function finish(): TraceRequest | null {
   const ctx = storage.getStore();
@@ -163,25 +159,8 @@ export function finish(): TraceRequest | null {
     durationMs: Date.now() - ctx.startedAtMs,
   });
 
-  defaultSink(ctx.sessionId, request);
   sink(request);
   return request;
-}
-
-/**
- * Pull and clear the buffered requests for a session, shaped as the body of a
- * `trace` artifact's `requests` array. The report bundle assembly wraps these in
- * `{ sessionId, requests }` to form a {@link TraceArtifact}.
- */
-export function drainSession(sessionId: string): TraceRequest[] {
-  const buf = sessionBuffers.get(sessionId) ?? [];
-  sessionBuffers.delete(sessionId);
-  return buf;
-}
-
-/** Peek at a session's buffered requests without clearing. */
-export function peekSession(sessionId: string): TraceRequest[] {
-  return sessionBuffers.get(sessionId) ?? [];
 }
 
 /**

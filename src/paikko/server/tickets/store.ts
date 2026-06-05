@@ -14,7 +14,7 @@
  * leak a shape the agent runner doesn't expect.
  */
 
-import { prisma } from "@/lib/db";
+import { getPrisma } from "@/lib/db";
 import {
   ArtifactIndex,
   ArtifactIndexEntry,
@@ -276,6 +276,7 @@ function summarize(name: ArtifactName, payload: unknown): string {
 export async function createTicketFromBundle(
   bundle: ReportBundle,
 ): Promise<{ id: string }> {
+  const prisma = getPrisma();
   const { reporter, report, artifacts } = bundle;
 
   const artifactRows = (
@@ -326,6 +327,7 @@ export async function createTicketFromBundle(
 export async function listHeads(
   status?: TicketStatus,
 ): Promise<TicketHead[]> {
+  const prisma = getPrisma();
   const rows = await prisma.ticket.findMany({
     where: status ? { status } : undefined,
     orderBy: { createdAt: "desc" },
@@ -336,6 +338,7 @@ export async function listHeads(
 
 /** Fetch one tier-1 head by id, or throw {@link TicketNotFoundError}. */
 export async function getHead(id: string): Promise<TicketHead> {
+  const prisma = getPrisma();
   const row = await prisma.ticket.findUnique({
     where: { id },
     include: headInclude,
@@ -353,6 +356,7 @@ export async function getArtifactPayload<N extends ArtifactName>(
   ticketId: string,
   name: N,
 ): Promise<ArtifactPayloadMap[N]> {
+  const prisma = getPrisma();
   const ticket = await prisma.ticket.findUnique({
     where: { id: ticketId },
     select: { id: true },
@@ -386,17 +390,23 @@ export async function setStatus(
   id: string,
   to: TicketStatus,
 ): Promise<TicketHead> {
-  await prisma.$transaction(async (tx) => {
-    const current = await tx.ticket.findUnique({
-      where: { id },
-      select: { status: true },
-    });
-    if (!current) throw new TicketNotFoundError(id);
-    const from = current.status as TicketStatus;
-    if (from === to) return; // idempotent no-op
-    if (!canTransition(from, to)) throw new InvalidTransitionError(from, to);
-    await tx.ticket.update({ where: { id }, data: { status: to } });
+  // NOTE: Cloudflare D1 does not support interactive (callback) transactions, so
+  // the @prisma/adapter-d1 driver adapter rejects `prisma.$transaction(async tx
+  // => ...)`. We read-then-write without a wrapping transaction. The state
+  // machine is still enforced (illegal edges throw); the lost guarantee is only
+  // the atomic read-modify-write against a concurrent racer. v0 runs a single
+  // serial runner, so a lost update here is acceptable - documented, not hidden.
+  const prisma = getPrisma();
+  const current = await prisma.ticket.findUnique({
+    where: { id },
+    select: { status: true },
   });
+  if (!current) throw new TicketNotFoundError(id);
+  const from = current.status as TicketStatus;
+  if (from !== to) {
+    if (!canTransition(from, to)) throw new InvalidTransitionError(from, to);
+    await prisma.ticket.update({ where: { id }, data: { status: to } });
+  }
   return getHead(id);
 }
 
@@ -410,6 +420,7 @@ export async function appendThreadMessage(
   by: string,
   text: string,
 ): Promise<TicketHead> {
+  const prisma = getPrisma();
   const ticket = await prisma.ticket.findUnique({
     where: { id },
     select: { id: true },
@@ -431,31 +442,39 @@ export async function patchTicket(
   id: string,
   patch: { status?: TicketStatus; message?: { by: string; text: string } },
 ): Promise<TicketHead> {
-  await prisma.$transaction(async (tx) => {
-    const current = await tx.ticket.findUnique({
-      where: { id },
-      select: { status: true },
-    });
-    if (!current) throw new TicketNotFoundError(id);
+  // See setStatus() above: D1 has no interactive transactions, so this is no
+  // longer atomic. We validate the transition BEFORE writing anything, so an
+  // illegal edge still aborts without a partial write of the message. The only
+  // weakened guarantee is a concurrent racer between the read and the writes,
+  // which the single serial v0 runner does not hit.
+  const prisma = getPrisma();
+  const current = await prisma.ticket.findUnique({
+    where: { id },
+    select: { status: true },
+  });
+  if (!current) throw new TicketNotFoundError(id);
 
-    if (patch.message) {
-      await tx.threadMessage.create({
-        data: { ticketId: id, by: patch.message.by, text: patch.message.text },
+  if (patch.status) {
+    const from = current.status as TicketStatus;
+    if (from !== patch.status && !canTransition(from, patch.status)) {
+      throw new InvalidTransitionError(from, patch.status);
+    }
+  }
+
+  if (patch.message) {
+    await prisma.threadMessage.create({
+      data: { ticketId: id, by: patch.message.by, text: patch.message.text },
+    });
+  }
+  if (patch.status) {
+    const from = current.status as TicketStatus;
+    if (from !== patch.status) {
+      await prisma.ticket.update({
+        where: { id },
+        data: { status: patch.status },
       });
     }
-    if (patch.status) {
-      const from = current.status as TicketStatus;
-      if (from !== patch.status) {
-        if (!canTransition(from, patch.status)) {
-          throw new InvalidTransitionError(from, patch.status);
-        }
-        await tx.ticket.update({
-          where: { id },
-          data: { status: patch.status },
-        });
-      }
-    }
-  });
+  }
   return getHead(id);
 }
 

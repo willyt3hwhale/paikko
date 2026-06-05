@@ -1,0 +1,64 @@
+{
+  // paikko on Cloudflare Workers via @opennextjs/cloudflare.
+  // Run `npm run cf-typegen` after editing bindings to regenerate types.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "paikko",
+
+  // Custom Worker entry: re-exports OpenNext's generated handler AND the
+  // SessionTrace Durable Object class (a DO binding requires its class to be
+  // exported from the Worker entry). See worker.ts. The generated handler lives
+  // at .open-next/worker.js after `opennextjs-cloudflare build`.
+  "main": "worker.ts",
+
+  // nodejs_compat is REQUIRED by OpenNext (it pulls in node: builtins, including
+  // node:async_hooks which the paikko trace seam relies on). Date must be
+  // >= 2024-09-23 for OpenNext; >= 2025-04-01 also auto-populates process.env
+  // from vars, which Next expects.
+  "compatibility_date": "2025-04-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Static assets emitted by the OpenNext build, served by the Workers runtime.
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  // Lets the Worker call itself (used by OpenNext for some server actions / cache
+  // paths). The service name must match "name" above.
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "paikko"
+    }
+  ],
+
+  // The ticket store. database_id is filled in after `wrangler d1 create paikko`.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "paikko",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // The backend-trace buffer. One DO instance per capture session
+  // (idFromName(sessionId)); the class is exported from worker.ts.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SESSION_TRACE",
+        "class_name": "SessionTrace"
+      }
+    ]
+  },
+
+  // SessionTrace uses SQLite-backed DO storage (the only option for DOs created
+  // on the Workers Free plan, and the current default for new classes).
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["SessionTrace"]
+    }
+  ]
+}

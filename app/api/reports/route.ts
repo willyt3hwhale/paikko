@@ -33,7 +33,7 @@ export const POST = withCapture(
       // and splits it out like every other artifact.
       const sessionId = req.headers.get(SESSION_HEADER);
       if (sessionId) {
-        const trace = buildTraceArtifact(sessionId);
+        const trace = await buildTraceArtifact(sessionId);
         if (trace) {
           bundle.artifacts = { ...bundle.artifacts, trace };
         }
