@@ -6,20 +6,43 @@ spec - the loop, the seams it must not cross, and the contract it speaks. The
 executable form of this spec is the `/paikko-run` skill at
 `.claude/skills/paikko-run/SKILL.md`; this document is the design behind it.*
 
+## Monorepo: framework vs consumer
+
+paikko is an npm-workspaces **monorepo**. The **framework** lives in `packages/*`:
+
+- `packages/contract` (`@paikko/contract`) - the wire contract.
+- `packages/widget` (`@paikko/widget`) - the report widget the consumer mounts.
+- `packages/backend` (`@paikko/backend`) - the Next 15 + OpenNext/Workers app:
+  the ticket **API** (`/api/**`) and the `/tickets` **review UI** (root `/`
+  redirects to `/tickets`). It serves the review surface the human and runner use;
+  it never serves an end-user app.
+
+The **consumer** lives in `examples/calculator` (`@paikko/calculator`) - a plain
+Next 15 app that mounts `@paikko/widget` and POSTs reports cross-origin to the
+backend. **The runner fixes consumer-app code, and only consumer-app code.** A
+report is a bug a user hit in the consumer app; the fix belongs in that consumer
+app (default dir `examples/calculator`, configurable). **The framework
+(`packages/*`) is never edited by the loop** - if a report seems to need a
+framework change, that is out of scope and the runner says so (`needs_info`)
+rather than touching `packages/*`.
+
 ## Execution model: a TUI skill, not a headless process
 
 The runner is **not** an outside `claude -p` daemon. The user invokes
-`/paikko-run` inside their interactive Claude Code session, in the paikko repo,
-with the **main persistent preview already running on :8787** (`npm run preview`).
-The skill drives the loop on the user's TUI subscription - a headless `claude -p`
-script would bill as API and defeats the point.
+`/paikko-run` inside their interactive Claude Code session, in the paikko monorepo,
+with the **backend ticket API already running on :8787** (`npm run preview` in
+`packages/backend`). The skill drives the loop on the user's TUI subscription - a
+headless `claude -p` script would bill as API and defeats the point. The ticket
+API base is configurable (default the local backend, `http://localhost:8787`).
 
 The **interactive session IS the main loop.** It finds actionable tickets, picks
-one, fixes it **in an isolated git worktree + branch**, stands up an **isolated
-preview** for that fix alone, parks the ticket in `reviewing`, and reacts to the
-user's Accept / Reject / Reply - all through the same HTTP surface the in-app UI
-uses. The main loop edits code **only inside the ticket's worktree**, never in the
-main checkout; `main` is changed only by an Accept merge.
+one, fixes it **in an isolated git worktree + branch** (in the consumer-app dir),
+stands up an **isolated `next dev` preview of the consumer app** for that fix
+alone, parks the ticket in `reviewing`, and reacts to the user's Accept / Reject /
+Reply - all through the same HTTP surface the in-app review UI uses. The main loop
+edits code **only inside the ticket's worktree, under the consumer-app dir**,
+never the framework and never the main checkout; `main` is changed only by an
+Accept merge.
 
 The skill processes the **actionable set until it is empty**, then stops and
 offers to re-run (a `/loop` wrapper can re-poll on a cadence). It does not
@@ -29,40 +52,46 @@ busy-wait; `reviewing` is parked.
 
 ## The branch-isolated review model (replaces direct-to-live)
 
-The earlier v0 demo applied each fix **directly to the live working tree** the
-:8787 preview served, so the live app mutated the moment a fix landed and "review"
-meant re-testing a live app that had already changed. That is demo-grade. The
-runner now isolates every fix:
+The earlier v0 demo applied each fix **directly to the live working tree**, so the
+app mutated the moment a fix landed and "review" meant re-testing an app that had
+already changed. That is demo-grade. The runner now isolates every fix, and every
+fix targets the **consumer app** (`examples/calculator`):
 
 - **One worktree + branch per ticket.** Each ticket is fixed in its OWN git
   worktree (`../paikko-wt-{id}`) on its OWN branch (`ticket/{id}`) cut off `main`.
-  The **live app on `main` (port 8787) stays pristine** until the user Accepts.
-- **One isolated preview per ticket.** Each fixed ticket gets its OWN OpenNext
-  preview on **port 8788** (sequential - exactly one at a time) serving ONLY that
-  worktree's bundle. The user views **only this fix** there. The ticket review UI
-  (Accept / Reject / Reply) stays on the MAIN app on :8787 (pristine `main`).
-- **"View fix" -> the isolated preview.** The ticket carries a `previewUrl`
-  (e.g. `http://localhost:8788`) pointing at its isolated preview - NOT the live
-  app - and a `branch` (`ticket/{id}`).
+  Edits land only in the worktree's consumer-app dir
+  (`../paikko-wt-{id}/examples/calculator/**`). The **live consumer app on `main`
+  stays pristine** until the user Accepts.
+- **One isolated preview per ticket.** Each fixed ticket gets its OWN `next dev`
+  of the consumer app on an **alt port** (default 3001; sequential - exactly one at
+  a time) serving ONLY that worktree's fix. The user views **only this fix**
+  there. The ticket review UI (Accept / Reject / Reply) is on the **backend**
+  (:8787), which is unaffected by consumer-app fixes.
+- **"View fix" -> the isolated consumer-app preview.** The ticket carries a
+  `previewUrl` (e.g. `http://localhost:3001`) pointing at the isolated `next dev`
+  of the fixed consumer app - NOT the live consumer app - and a `branch`
+  (`ticket/{id}`).
 - **A reply re-engages the agent.** ANY user reply on a `reviewing` ticket
   re-engages the agent: it revisits and revises on the SAME branch + worktree, no
   separate Reject needed to request changes. A reply is enough.
-- **Accept = merge.** Accept merges the ticket's branch to `main` and the live
-  :8787 preview hot-reloads the fix into the live app; status -> `closed`.
+- **Accept = merge.** Accept merges the ticket's consumer-app branch to `main`;
+  the live consumer app (`next dev`) hot-reloads the merged source. status ->
+  `closed`. The framework is never in the merge diff.
 - **Reject = discard.** Reject discards the branch + worktree; live untouched;
   status -> `rejected`.
-- **Sequential.** One active worktree + one :8788 preview at a time keeps the loop
-  feasible on a local machine.
+- **Sequential.** One active worktree + one isolated preview at a time keeps the
+  loop feasible on a local machine.
 
-The user manages :8787; **the skill never starts or kills it** - it only reads its
-API and triggers a `main` rebuild on Accept so the live preview picks up the merge.
+The user manages the backend :8787; **the skill never starts or kills it** - it
+only reads/writes its ticket API. Because the consumer app is a plain Next app,
+Accept needs no build step: a running `next dev` hot-reloads the merged fix.
 
 ---
 
 ## Contract
 
 Everything the runner reads or writes is shaped by `@/lib/contract` (see
-`src/lib/contract.ts` - read it before touching this loop). Validate every
+`packages/contract/src/index.ts` - read it before touching this loop). Validate every
 payload with the matching zod schema; never trust a wire shape.
 
 Types/schemas the runner uses:
@@ -74,9 +103,9 @@ Types/schemas the runner uses:
   fields:
   - `branch` (`string | null`) - the git branch the fix lives on (`ticket/{id}`).
     Null until the agent cuts the branch.
-  - `previewUrl` (`string | null`) - the isolated preview URL where ONLY this
-    fix is viewable (`http://localhost:8788`). Null until the isolated preview is
-    up.
+  - `previewUrl` (`string | null`) - the isolated consumer-app preview URL where
+    ONLY this fix is viewable (`http://localhost:3001`, a `next dev` of the
+    fixed consumer app). Null until the isolated preview is up.
   Both are always present as keys on the wire; value is a string or `null`.
 - `ArtifactIndex` / `ArtifactIndexSchema` - `Partial<Record<ArtifactName,
   ArtifactIndexEntry>>`. Each entry: `ref` (`"GET /tickets/:id/artifacts/:name"`),
@@ -131,11 +160,13 @@ the runner revises in place and the ticket stays `reviewing`.
 
 ## HTTP surface
 
-Base URL is the running main preview (default `http://localhost:8787`, the
-pristine `main` served by `npm run preview`; override if the user gave another).
-All ticket routes are App-Router handlers under `app/api/**` and are therefore
-wrapped in `withCapture` (the seam guard enforces this; the runner just consumes
-them). The skill issues these as plain `curl` calls - see
+Base URL is the running **backend** (default `http://localhost:8787`, the
+`@paikko/backend` Workers app served by `npm run preview` in `packages/backend`;
+the ticket API base is configurable - override if the user gave another). All
+ticket routes are App-Router handlers under `packages/backend/app/api/**`,
+wrapped in `withCapture` and CORS (the backend's seam guard enforces this; the
+runner just consumes them - it never edits them). The skill issues these as plain
+`curl` calls - see
 `.claude/skills/paikko-run/SKILL.md` for the exact method/path/body of every
 transition.
 
@@ -151,25 +182,26 @@ actionable set from multiple status polls (see "The loop"). This mirrors the
 store's `listActionable` helper: status `open`, OR status `reviewing` whose newest
 thread message is from a non-agent author (a fresh user reply).
 
-> **Wire intake caveat.** The store layer (`setStatus`/`patchTicket` +
-> `ReviewFields`) is ready to persist `branch`/`previewUrl`, but the PATCH route's
-> `PatchBodySchema` must be extended to accept them for the values to flow over
-> the wire. The skill always sends them; if the route rejects the extra keys it
-> retries with `{status, message}` only (the status transition still lands) and
-> reconstructs `branch`/`previewUrl` from convention - `branch = "ticket/{id}"`,
-> `previewUrl = "http://localhost:8788"`.
+> **Wire intake.** The backend PATCH route's `PatchBodySchema` accepts
+> `branch`/`previewUrl` (verified), and the store persists them. The skill always
+> sends them; if an older backend rejects the extra keys it retries with
+> `{status, message}` only (the status transition still lands) and reconstructs
+> `branch`/`previewUrl` from convention - `branch = "ticket/{id}"`,
+> `previewUrl = "http://localhost:3001"`.
 
 ---
 
 ## The loop
 
 One pass = one ticket, handled fully (parked / merged / discarded) before the
-next. **Strictly serial:** exactly one worktree and one :8788 isolated preview
-exist at a time. The human watching the in-app board sees a clean, ordered trail.
+next. **Strictly serial:** exactly one worktree and one isolated consumer-app
+preview (default :3001) exist at a time. `$CONSUMER_DIR = examples/calculator`
+(configurable) is the only dir the loop edits. The human watching the review
+board sees a clean, ordered trail.
 
 ```
 loop:
-  FIND   -> the actionable set, oldest-first:
+  FIND   -> the actionable set, oldest-first (backend API, default :8787):
             - GET ?status=open       -> NEW
             - GET ?status=reviewing  -> RE-ENGAGE iff last thread msg is non-agent
             - GET ?status=closed     -> ACCEPT cleanup iff branch unmerged + worktree exists
@@ -180,24 +212,25 @@ loop:
    NEW (open):
      CLAIM   -> open -> reproducing, post "picked up - fixing on an isolated branch"
      PULL    -> GET head, triage artifact SUMMARIES, fetch only what the fix needs
-     (ambiguous? -> reproducing -> needs_info + one question; no worktree; NEXT)
-     ISOLATE -> git worktree add -B ticket/T ../paikko-wt-T main
-     FIX     -> edit ../paikko-wt-T/app/calc/** (NEVER the main checkout)
-     VERIFY  -> in the worktree: tsc --noEmit clean; lint:seams (only known baseline ok)
+     (ambiguous OR framework concern? -> reproducing -> needs_info + one question; no worktree; NEXT)
+     ISOLATE -> git worktree add -B ticket/T ../paikko-wt-T main; symlink node_modules
+     FIX     -> edit ../paikko-wt-T/$CONSUMER_DIR/** (NEVER packages/*, NEVER the main checkout)
+     VERIFY  -> in $CONSUMER_DIR: npm run typecheck clean (no lint:seams - framework-only)
      COMMIT  -> commit the fix on ticket/T
-     PREVIEW -> kill :8788; build the worktree bundle; serve it on :8788 (background)
+     PREVIEW -> kill :3001; next dev the consumer-app worktree on :3001 (background)
      PUBLISH -> reproducing -> reviewing {branch, previewUrl} + "View the fix..." note (PARKED)
 
    RE-ENGAGE (reviewing + fresh user reply):
-     reuse ../paikko-wt-T + ticket/T; read the WHOLE thread; revise; re-verify;
-     commit; rebuild :8788; post an update. Stay reviewing.
+     reuse ../paikko-wt-T + ticket/T; read the WHOLE thread; revise in $CONSUMER_DIR;
+     re-verify; commit; restart :3001 (next dev); post an update. Stay reviewing.
 
    ACCEPT (closed, branch unmerged):
-     git -C main merge --no-ff ticket/T  (live :8787 hot-reloads); kill :8788;
-     worktree remove ../paikko-wt-T; branch -d ticket/T; post "Merged to main - live."
+     git -C main merge --no-ff ticket/T  (consumer-app source only; live next dev
+     hot-reloads, no build); kill :3001; worktree remove ../paikko-wt-T;
+     branch -d ticket/T; post "Merged to main - the consumer app now has the fix."
 
    REJECT (rejected):
-     kill :8788; worktree remove --force ../paikko-wt-T; branch -D ticket/T;
+     kill :3001; worktree remove --force ../paikko-wt-T; branch -D ticket/T;
      live untouched; post "Discarded - live unchanged."
 
   NEXT   -> continue with the next oldest actionable ticket.
@@ -259,44 +292,53 @@ The fix for ticket `T` lives in a worktree `../paikko-wt-{T}` on branch
 git -C "$MAIN_REPO" worktree add -B "ticket/$T" "../paikko-wt-$T" main
 ```
 
-All editing happens under `../paikko-wt-$T/app/calc/**` (and the store there if
-the bug needs it). The main checkout is never edited. The fix is a **commit on
-`ticket/{T}`** so Accept can merge / cherry-pick it; `main` is changed only by the
-Accept merge.
+All editing happens under `../paikko-wt-$T/$CONSUMER_DIR/**` (the consumer app -
+e.g. `examples/calculator`: its `app/**` pages and its own `lib/store.ts`). The
+**framework (`../paikko-wt-$T/packages/**`) and the main checkout are never
+edited.** The worktree gets `node_modules` by symlinking the main checkout's
+(`ln -s "$MAIN_REPO/node_modules" "$WT/node_modules"`); the hoisted workspace
+already contains the `@paikko/*` links the consumer imports. The fix is a
+**commit on `ticket/{T}`** so Accept can merge / cherry-pick it; `main` is changed
+only by the Accept merge.
 
-### Isolated preview (port 8788, one at a time)
+### Isolated preview (alt port, one at a time)
 
-The isolated preview serves the worktree's OpenNext bundle on :8788 so the user
-views ONLY this fix. D1/tickets are not needed there - `/calc` is client-side.
+The isolated preview is a `next dev` of the **consumer app** in the worktree on an
+alt port (default 3001) so the user views ONLY this fix. The consumer app is a
+plain Next 15 app - no Workers/OpenNext build is needed; `next dev` is the proven,
+fast path (and it hot-reloads source edits during re-engage).
 
 ```bash
-lsof -ti tcp:8788 | xargs -r kill 2>/dev/null || true          # free the port
-( cd "$WT" && npx opennextjs-cloudflare build )                # build worktree bundle
-( cd "$WT" && npx opennextjs-cloudflare preview -- --port 8788 )  # serve (background)
+lsof -ti tcp:3001 | xargs -r kill 2>/dev/null || true                 # free the port
+[ -e "$WT/node_modules" ] || ln -s "$MAIN_REPO/node_modules" "$WT/node_modules"
+( cd "$WT/$CONSUMER_DIR" && npx next dev -p 3001 )                     # serve (background)
 ```
 
-`opennextjs-cloudflare preview` forwards trailing args to `wrangler dev`; if that
-does not bind the port, drive `npx wrangler dev --port 8788` against the built
-bundle directly. The runner stores `previewUrl = http://localhost:8788` on the
-ticket so "View fix" links there.
+The runner stores `previewUrl = http://localhost:3001` on the ticket so "View fix"
+links at the isolated consumer-app preview. The widget in that preview still
+points at the backend (its `NEXT_PUBLIC_PAIKKO_*` env), so reports filed from the
+preview also land on the backend.
 
 ---
 
 ## Verifying the fix (in the worktree)
 
-On the NEW and RE-ENGAGE paths the runner verifies **in the worktree** before
-publishing to `reviewing`:
+On the NEW and RE-ENGAGE paths the runner verifies the **consumer app** in the
+worktree before publishing to `reviewing`:
 
-- `npx tsc --noEmit` must be **clean** - a type error is a hard stop.
-- `npm run lint:seams` must pass with only the **one known baseline provenance
-  violation**; any NEW seam violation is a hard stop. This is the mechanical seam
-  guard: binary (was a seam bypassed - yes/no). The runner's own re-read of the
-  report (does the diff plausibly fix *that* bug without regressing) is the
-  correctness judgement on top of it. Both must be satisfied.
+- `npm run typecheck` (`tsc --noEmit`) in `$CONSUMER_DIR` must be **clean** - a
+  type error is a hard stop.
+- There is **no `lint:seams`** in the consumer loop. The seam guard guards the
+  framework backend (`packages/backend`), which the loop never edits; the consumer
+  app has no seams to guard. On top of the typecheck, the runner's own re-read of
+  the report (does the diff plausibly fix *that* bug without regressing, and does
+  it stay inside `$CONSUMER_DIR`) is the correctness judgement.
 
-Never publish a fix to `reviewing` unless both pass. If the fix cannot be made
-clean, do not park it - tear down the worktree and either post `needs_info` (if
-context is missing) or leave a note explaining what is blocking, then move on.
+Never publish a fix to `reviewing` unless the typecheck passes and the fix stays
+in the consumer app. If the fix cannot be made clean, or would require a framework
+change, do not park it - tear down the worktree and either post `needs_info` (if
+context is missing or it's a framework concern) or leave a note explaining what is
+blocking, then move on.
 
 ---
 
@@ -307,9 +349,9 @@ On a verified fix the runner flips the ticket `reproducing -> reviewing`, sets
 the isolated preview and either Accept & merge or reply to request changes.
 
 `reviewing` is **parked and non-blocking**: the runner does NOT wait for the
-human. The isolated preview stays up on :8788; the user reviews only the fix
-there while the live app on :8787 is still pristine `main`. The runner moves on to
-the next actionable ticket.
+human. The isolated consumer-app preview stays up on :3001; the user reviews only
+the fix there while the live consumer app on `main` is still pristine. The runner
+moves on to the next actionable ticket.
 
 ---
 
@@ -324,9 +366,9 @@ newest in the thread. The runner:
   recreates it from the branch (`git worktree add ../paikko-wt-T ticket/T`).
 - Reads the **WHOLE thread** - the latest user reply says what to change; the
   full conversation is the agent's working memory across review cycles.
-- Revises in place, re-verifies, **commits the revision on the same branch**,
-  rebuilds the isolated preview on :8788, posts an update, and **stays
-  `reviewing`**.
+- Revises in place (in `$CONSUMER_DIR`), re-verifies, **commits the revision on
+  the same branch**, restarts the isolated consumer-app preview on :3001 (`next
+  dev`), posts an update, and **stays `reviewing`**.
 
 This is why the head carries the full `thread`: the conversation *is* the working
 memory, and a reply alone re-engages the fix.
@@ -338,29 +380,31 @@ memory, and a reply alone re-engages the fix.
 These statuses are set by the human in the in-app UI; the runner performs the git
 side when it next sees the ticket.
 
-### Accept (`closed`) -> merge to main, live redeploys
+### Accept (`closed`) -> merge consumer-app branch to main
 
 ```bash
 git -C "$MAIN_REPO" merge --no-ff "ticket/$T" -m "merge ticket/$T into main"
-( cd "$MAIN_REPO" && npx opennextjs-cloudflare build )   # live :8787 hot-reloads the fix
-lsof -ti tcp:8788 | xargs -r kill 2>/dev/null || true    # kill the isolated preview
+# No build step: the consumer app is a plain Next app; a running `next dev` of
+# the live consumer app hot-reloads the merged source automatically.
+lsof -ti tcp:3001 | xargs -r kill 2>/dev/null || true    # kill the isolated preview
 git -C "$MAIN_REPO" worktree remove "../paikko-wt-$T"
 git -C "$MAIN_REPO" branch -d "ticket/$T"
 ```
 
-Post "Merged to main - live." A merge conflict or a dirty `main` working tree
-stops the runner (surface it to the user; never force).
+Post "Merged to main - the consumer app now has the fix." A merge conflict or a
+dirty `main` working tree stops the runner (surface it to the user; never force).
+The merge only touches `$CONSUMER_DIR/**`; the framework is never in the diff.
 
 ### Reject (`rejected`) -> discard, live untouched
 
 ```bash
-lsof -ti tcp:8788 | xargs -r kill 2>/dev/null || true
+lsof -ti tcp:3001 | xargs -r kill 2>/dev/null || true
 git -C "$MAIN_REPO" worktree remove --force "../paikko-wt-$T"
 git -C "$MAIN_REPO" branch -D "ticket/$T"
 ```
 
-Post "Discarded - live unchanged." The fix never reached `main`, so the live app
-is byte-for-byte the pristine baseline.
+Post "Discarded - live unchanged." The fix never reached `main`, so the live
+consumer app is byte-for-byte the pristine baseline.
 
 ---
 
@@ -373,7 +417,7 @@ When the runner posts, `by: "agent"`, and keep `text` minimal and human-readable
   preview; Accept & merge or reply to request changes."
 - on `needs_info`: a single concrete question.
 - on re-engage: a brief note of what changed vs. the prior version.
-- on Accept: "Merged to main - live."
+- on Accept: "Merged to main - the consumer app now has the fix."
 - on Reject: "Discarded - live unchanged."
 
 The server stamps `id` and `at`; the runner sends only `{ by, text }`.
@@ -382,22 +426,27 @@ The server stamps `id` and `at`; the runner sends only `{ by, text }`.
 
 ## Invariants (do not break)
 
-1. **Main stays pristine until Accept.** Edits happen ONLY inside the ticket's
-   worktree (`../paikko-wt-{id}/app/calc/**`). `main` is changed ONLY by an Accept
-   merge. The runner never edits the main checkout.
+1. **The loop edits ONLY the consumer app.** Edits happen ONLY inside the ticket's
+   worktree, under `$CONSUMER_DIR` (`../paikko-wt-{id}/examples/calculator/**`).
+   The **framework (`packages/*`) is never edited** - contract, widget, backend
+   are all off-limits. `main` is changed ONLY by an Accept merge. The runner never
+   edits the main checkout.
 2. **Validate every wire payload** with the contract's zod schema before use.
 3. **Run as a TUI skill, not headless.** `/paikko-run` drives the loop inside the
    interactive session; never a `claude -p` daemon.
-4. **The skill never starts/kills :8787.** The user owns the main persistent
-   preview; the skill reads its API and triggers a `main` rebuild on Accept.
-5. **One worktree + one :8788 preview at a time.** Strictly sequential.
+4. **The skill never starts/kills the backend (:8787).** The user owns the backend
+   review server; the skill only reads/writes its ticket API. The backend is
+   framework - never rebuilt or edited by the loop.
+5. **One worktree + one isolated preview (default :3001) at a time.** Strictly
+   sequential. The preview is a `next dev` of the consumer-app worktree.
 6. **A user reply re-engages on the same branch** - no separate Reject is needed
    to request changes.
 7. **Each fix is a commit on `ticket/{id}`** so Accept can merge/cherry-pick.
-8. **Seams are sacred.** A NEW `lint:seams` violation or any `tsc --noEmit` error
-   is a hard stop; never park a seam-breaking fix in `reviewing`. Only the one
-   known baseline provenance violation is tolerated.
+8. **Consumer typecheck is the gate.** Any `tsc --noEmit` error in the consumer
+   app is a hard stop; never park a non-compiling fix in `reviewing`. There is no
+   `lint:seams` in the consumer loop (it guards the framework backend, untouched).
 9. **Triage before fetch.** Default to zero artifact fetches; pull only what the
    fix needs.
-10. **Honest needs_info** for ambiguous reports - ask one concrete question
-    instead of guessing, and leave no worktree behind.
+10. **Honest needs_info** for ambiguous reports or framework-only concerns - ask
+    one concrete question instead of guessing or editing `packages/*`, and leave
+    no worktree behind.

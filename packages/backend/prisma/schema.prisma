@@ -1,0 +1,76 @@
+// paikko ticket store - v0 SQLite.
+// Mirrors the persisted side of the ticket bundle defined in src/lib/contract.ts.
+// The contract is the source of truth for shapes; these models are how the head
+// and artifacts land on disk. Artifact.payload is opaque JSON validated by the
+// matching zod schema in the contract before it is written/read.
+
+generator client {
+  provider        = "prisma-client-js"
+  // driverAdapters is required to run Prisma through the @prisma/adapter-d1
+  // driver adapter on Cloudflare Workers (the D1 binding comes from the request
+  // env, not a connection string). Preview feature in Prisma 5.x.
+  previewFeatures = ["driverAdapters"]
+}
+
+// Provider stays "sqlite": D1 IS SQLite, and the adapter speaks the sqlite
+// dialect. The `url` is only used by the Prisma CLI for local tooling
+// (migrate diff, studio). At runtime the connection is the D1 binding supplied
+// via the adapter, so DATABASE_URL is irrelevant on Workers.
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Ticket {
+  id             String       @id @default(cuid())
+  status         String       @default("open")
+  kind           String
+  reporter       String
+  route          String
+  targetSelector String?
+  targetSrc      String?
+  targetComponent String?
+  message        String
+  // Branch-isolated review: the git branch the fix lives on ("ticket/{id}") and
+  // the isolated preview URL where only this fix is viewable. Both null until the
+  // agent cuts the branch / brings up the isolated preview. `status` stays a free
+  // String (app-validated by TicketStatusSchema), including the new "rejected".
+  branch         String?
+  previewUrl     String?
+  // SaaS / multi-tenancy seam: which project/tenant this ticket belongs to,
+  // stamped by the reporting widget on the ReportBundle (and/or the
+  // x-paikko-project header). Null in the single-tenant deployment; list/queries
+  // ignore it for now but it is persisted so making multi-tenancy real is a value
+  // flip, not a schema change.
+  projectKey     String?
+  createdAt      DateTime     @default(now())
+
+  thread    ThreadMessage[]
+  artifacts Artifact[]
+}
+
+model ThreadMessage {
+  id       String   @id @default(cuid())
+  ticketId String
+  by       String
+  text     String
+  at       DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+}
+
+model Artifact {
+  id        String   @id @default(cuid())
+  ticketId  String
+  name      String
+  summary   String
+  payload   String
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, name])
+  @@index([ticketId])
+}

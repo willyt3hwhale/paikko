@@ -2,41 +2,16 @@
   "name": "paikko",
   "version": "0.0.0",
   "private": true,
-  "description": "Point at the bug. The agent fixes it.",
+  "description": "Point at the bug. The agent fixes it. (monorepo root)",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "postinstall": "prisma generate",
-    "lint:seams": "node scripts/seam-guard.mjs",
-    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv",
-    "d1:migrate:diff": "prisma migrate diff --from-local-d1 --to-schema-datamodel ./prisma/schema.prisma --script",
-    "d1:migrate:local": "wrangler d1 migrations apply paikko --local",
-    "d1:migrate:remote": "wrangler d1 migrations apply paikko --remote"
-  },
-  "dependencies": {
-    "@opennextjs/cloudflare": "^1.19.11",
-    "@prisma/adapter-d1": "^5.22.0",
-    "@prisma/client": "^5.22.0",
-    "next": "^15.5.19",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "zod": "^3.23.8",
-    "zustand": "^4.5.5"
+    "build": "npm run build --workspaces --if-present",
+    "build:contract": "npm run build -w @paikko/contract"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260605.1",
-    "@types/node": "^20.16.11",
-    "@types/react": "^18.3.11",
-    "@types/react-dom": "^18.3.0",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.47",
-    "prisma": "^5.22.0",
-    "tailwindcss": "^3.4.13",
-    "typescript": "^5.6.3",
-    "wrangler": "^4.98.0"
+    "typescript": "^5.6.3"
   }
 }
