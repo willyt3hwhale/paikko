@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type {
   ArtifactName,
   ArtifactIndexEntry,
@@ -62,13 +62,16 @@ export function ArtifactPanel<N extends ArtifactName>({
   }, [ticketId, name]);
 
   const toggle = useCallback(() => {
-    setOpen((wasOpen) => {
-      const next = !wasOpen;
-      // Lazy: fetch only the first time it's opened.
-      if (next && state.phase === "idle") void load();
-      return next;
-    });
-  }, [load, state.phase]);
+    // Pure updater: only flips the open flag. The lazy fetch is a side effect,
+    // handled in the effect below so it never runs inside the state updater
+    // (which React double-invokes under StrictMode).
+    setOpen((wasOpen) => !wasOpen);
+  }, []);
+
+  // Lazy: fetch the payload the first time the panel is opened.
+  useEffect(() => {
+    if (open && state.phase === "idle") void load();
+  }, [open, state.phase, load]);
 
   return (
     <div className="rounded-lg border border-neutral-200 bg-white">
