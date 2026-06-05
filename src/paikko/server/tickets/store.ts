@@ -136,14 +136,42 @@ function jsonSize(value: unknown): number {
 }
 
 /**
+ * The `@prisma/adapter-d1` driver adapter has no column-type metadata from D1, so
+ * it sniffs each result cell's TYPE by regex-matching the string against an ISO
+ * date pattern (see its `isoDateRegex` / `getColumnTypes`). That regex's middle
+ * alternations are unanchored, so ANY string that merely CONTAINS an ISO date
+ * substring is misclassified as DateTime and the wasm query engine then throws
+ * `Inconsistent column data: ... expected a datetime string in column 'payload'`.
+ * Our artifact payloads are JSON that routinely embeds ISO timestamps (console/
+ * network `at`, trace times), so they trip this. The bug is present in 5.22 and
+ * still unfixed in 6.x, so we can't rely on a version bump.
+ *
+ * Fix: store the payload base64-encoded so the persisted TEXT can never contain a
+ * bare ISO-date substring for the adapter to latch onto. This is purely a storage
+ * encoding at the DB boundary - the contract shapes and the wire format are
+ * unchanged (we still validate against the zod schemas before write / after read).
+ */
+const PAYLOAD_PREFIX = "b64:";
+
+/** Encode a validated payload for storage (base64, prefixed so reads can detect it). */
+function encodePayload(payload: unknown): string {
+  return PAYLOAD_PREFIX + Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
+}
+
+/**
  * Decode a stored artifact payload. SQLite has no JSON column type, so payloads
- * are persisted as JSON strings; this turns the stored string back into the value
- * the contract schemas expect. Already-decoded values (defensive) pass through.
+ * are persisted as (base64-encoded) JSON strings; this turns the stored string
+ * back into the value the contract schemas expect. Handles both the current
+ * base64 form and any legacy plain-JSON rows. Already-decoded values (defensive)
+ * pass through.
  */
 function decodePayload(stored: unknown): unknown {
   if (typeof stored !== "string") return stored;
+  const json = stored.startsWith(PAYLOAD_PREFIX)
+    ? Buffer.from(stored.slice(PAYLOAD_PREFIX.length), "base64").toString("utf8")
+    : stored;
   try {
-    return JSON.parse(stored);
+    return JSON.parse(json);
   } catch {
     return stored;
   }
@@ -290,9 +318,11 @@ export async function createTicketFromBundle(
       {
         name,
         summary: summarize(name, payload),
-        // SQLite has no JSON column; persist the validated payload as a JSON
-        // string and decode it on read.
-        payload: JSON.stringify(payload),
+        // SQLite has no JSON column; persist the validated payload as a
+        // (base64-encoded) JSON string and decode it on read. The base64 wrapper
+        // keeps ISO-date substrings out of the stored TEXT, which the D1 adapter
+        // would otherwise misread as a DateTime column (see decodePayload).
+        payload: encodePayload(payload),
       },
     ];
   });

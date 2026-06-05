@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Keep Prisma external so the OpenNext Cloudflare adapter patches it to use the
+  // workerd/wasm query engine instead of bundling the default entry (which resolves
+  // the native/library engine and does filesystem binary-target probing via
+  // fs.readdir - unimplemented under nodejs_compat, hence the runtime 500s). Both
+  // the generated client (.prisma/client) and the base package must be listed.
+  serverExternalPackages: ["@prisma/client", ".prisma/client"],
   // Provenance seam: a later agent injects element provenance (data-src on every
   // JSX element) at build time. With Next 14 + SWC the hook point is a custom
   // experimental SWC plugin declared here, OR fall back to .babelrc (see below).
