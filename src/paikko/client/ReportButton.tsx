@@ -317,7 +317,7 @@ export function ReportButton({
         </div>
       )}
 
-      {(phase === "idle" || phase === "pointing") && (
+      {phase !== "form" && phase !== "submitting" && (
         <button
           type="button"
           data-paikko-ui="fab"
@@ -410,7 +410,7 @@ const styles: Record<string, React.CSSProperties> = {
   panel: {
     position: "fixed",
     right: 20,
-    bottom: 20,
+    bottom: 76, // sit above the FAB (bottom:20, ~40px tall) so they stack, never overlap
     width: 320,
     pointerEvents: "auto",
     background: "#fff",
