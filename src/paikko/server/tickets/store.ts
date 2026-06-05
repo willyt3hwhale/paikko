@@ -35,25 +35,33 @@ import {
 /* ------------------------------------------------------------------ */
 
 /**
- * The legal status transitions, mirroring the loop in README:
+ * The legal status transitions for the branch-isolated review loop:
  *
- *   open -> reproducing
+ *   open        -> reproducing    (agent claims the ticket)
  *   reproducing -> needs_info     (repro failed / agent needs info)
- *   reproducing -> reviewing      (fix proposed; PARKED, non-blocking)
+ *   reproducing -> reviewing      (fix proposed on its own branch + isolated
+ *                                  preview; PARKED, non-blocking)
  *   needs_info  -> reproducing    (reporter answered; retry repro)
- *   reviewing   -> closed         (accepted + verified)
- *   reviewing   -> reproducing    (rejected + comment; back to fix)
+ *   reviewing   -> closed         (ACCEPT: branch merged to main, live redeployed)
+ *   reviewing   -> reproducing    (RE-ENGAGE: a user reply on a `reviewing`
+ *                                  ticket revisits + revises on the same branch -
+ *                                  no separate reject needed to request changes)
+ *   reviewing   -> rejected       (REJECT: branch + worktree discarded, live
+ *                                  untouched)
  *   closed      -> reproducing    (reopened)
  *
  * `reviewing` is a parked state: the runner releases the ticket and picks
- * another while a human reviews, so nothing here blocks the queue.
+ * another while a human reviews, so nothing here blocks the queue. `closed`
+ * (accepted+merged) and `rejected` (discarded) are the two terminal outcomes;
+ * `rejected` has no outgoing edges.
  */
 const TRANSITIONS: Record<TicketStatus, readonly TicketStatus[]> = {
   open: ["reproducing"],
   reproducing: ["needs_info", "reviewing"],
   needs_info: ["reproducing"],
-  reviewing: ["closed", "reproducing"],
+  reviewing: ["closed", "reproducing", "rejected"],
   closed: ["reproducing"],
+  rejected: [],
 };
 
 /** Thrown when a caller asks for a status edge the machine forbids. */
@@ -125,6 +133,8 @@ interface TicketRow {
   targetSrc: string | null;
   targetComponent: string | null;
   message: string;
+  branch: string | null;
+  previewUrl: string | null;
   createdAt: Date;
   thread: ThreadRow[];
   artifacts: ArtifactRow[];
@@ -237,6 +247,8 @@ function toHead(row: TicketRow): TicketHead {
       .map(toThreadMessage)
       .sort((a, b) => a.at.localeCompare(b.at)),
     artifacts: toArtifactIndex(row.id, row.artifacts),
+    branch: row.branch,
+    previewUrl: row.previewUrl,
   };
   // Guarantee we never emit a shape the agent runner can't parse.
   return TicketHeadSchema.parse(head);
@@ -366,6 +378,44 @@ export async function listHeads(
   return (rows as unknown as TicketRow[]).map(toHead);
 }
 
+/**
+ * Author handle the agent posts under. A `reviewing` ticket whose newest thread
+ * message is NOT from the agent means the user replied after the agent's last
+ * update - i.e. a re-engage request.
+ */
+const AGENT_AUTHOR = "agent";
+
+/**
+ * The work queue for the runner. A ticket is "actionable" when:
+ *
+ *   - status === "open" (a fresh report waiting to be claimed), OR
+ *   - status === "reviewing" AND the last thread message is from a non-agent
+ *     author. On the branch-isolated loop a user reply on a parked `reviewing`
+ *     ticket re-engages the agent (revisit + revise on the same branch) - no
+ *     separate Reject is needed to request changes, the reply alone is the
+ *     signal. If the newest message is the agent's own (e.g. its "fix parked"
+ *     note), there is nothing new to act on and the ticket is skipped.
+ *
+ * Oldest first, so the runner drains the queue in report order. Returns full
+ * tier-1 heads (refs/summaries only, never artifact payloads).
+ */
+export async function listActionable(): Promise<TicketHead[]> {
+  const prisma = getPrisma();
+  const rows = await prisma.ticket.findMany({
+    where: { status: { in: ["open", "reviewing"] } },
+    orderBy: { createdAt: "asc" },
+    include: headInclude,
+  });
+  return (rows as unknown as TicketRow[])
+    .map(toHead)
+    .filter((head) => {
+      if (head.status === "open") return true;
+      // status === "reviewing": actionable only if the user replied last.
+      const last = head.thread[head.thread.length - 1];
+      return last !== undefined && last.by !== AGENT_AUTHOR;
+    });
+}
+
 /** Fetch one tier-1 head by id, or throw {@link TicketNotFoundError}. */
 export async function getHead(id: string): Promise<TicketHead> {
   const prisma = getPrisma();
@@ -409,16 +459,28 @@ export async function getArtifactPayload<N extends ArtifactName>(
 /* ------------------------------------------------------------------ */
 
 /**
- * Move a ticket to a new status, enforcing the state machine. Returns the
- * updated head. Throws {@link TicketNotFoundError} if the id is unknown or
- * {@link InvalidTransitionError} if the edge is illegal.
+ * Branch-isolated review fields a mutation may set alongside a status change:
+ * the git branch the fix lives on and the isolated preview URL where it is
+ * viewable. Both nullable - pass `null` to clear, omit to leave unchanged.
+ */
+export interface ReviewFields {
+  branch?: string | null;
+  previewUrl?: string | null;
+}
+
+/**
+ * Move a ticket to a new status, enforcing the state machine, optionally setting
+ * the branch-isolated review fields (`branch`, `previewUrl`) in the same write.
+ * Returns the updated head. Throws {@link TicketNotFoundError} if the id is
+ * unknown or {@link InvalidTransitionError} if the edge is illegal.
  *
- * Done in a transaction with a re-read of the current status so two concurrent
- * runners can't both drive the same illegal edge.
+ * Done with a re-read of the current status so two concurrent runners can't both
+ * drive the same illegal edge.
  */
 export async function setStatus(
   id: string,
   to: TicketStatus,
+  fields: ReviewFields = {},
 ): Promise<TicketHead> {
   // NOTE: Cloudflare D1 does not support interactive (callback) transactions, so
   // the @prisma/adapter-d1 driver adapter rejects `prisma.$transaction(async tx
@@ -433,11 +495,31 @@ export async function setStatus(
   });
   if (!current) throw new TicketNotFoundError(id);
   const from = current.status as TicketStatus;
-  if (from !== to) {
-    if (!canTransition(from, to)) throw new InvalidTransitionError(from, to);
-    await prisma.ticket.update({ where: { id }, data: { status: to } });
+  if (from !== to && !canTransition(from, to)) {
+    throw new InvalidTransitionError(from, to);
+  }
+  const data = reviewData(fields);
+  if (from !== to) data.status = to;
+  if (Object.keys(data).length > 0) {
+    await prisma.ticket.update({ where: { id }, data });
   }
   return getHead(id);
+}
+
+/**
+ * Build the Prisma update payload for the review fields, including only the keys
+ * actually present in the patch (so omitted fields are left untouched while an
+ * explicit `null` clears the column).
+ */
+function reviewData(fields: ReviewFields): {
+  status?: TicketStatus;
+  branch?: string | null;
+  previewUrl?: string | null;
+} {
+  const data: { branch?: string | null; previewUrl?: string | null } = {};
+  if ("branch" in fields) data.branch = fields.branch ?? null;
+  if ("previewUrl" in fields) data.previewUrl = fields.previewUrl ?? null;
+  return data;
 }
 
 /**
@@ -470,7 +552,10 @@ export async function appendThreadMessage(
  */
 export async function patchTicket(
   id: string,
-  patch: { status?: TicketStatus; message?: { by: string; text: string } },
+  patch: {
+    status?: TicketStatus;
+    message?: { by: string; text: string };
+  } & ReviewFields,
 ): Promise<TicketHead> {
   // See setStatus() above: D1 has no interactive transactions, so this is no
   // longer atomic. We validate the transition BEFORE writing anything, so an
@@ -484,11 +569,9 @@ export async function patchTicket(
   });
   if (!current) throw new TicketNotFoundError(id);
 
-  if (patch.status) {
-    const from = current.status as TicketStatus;
-    if (from !== patch.status && !canTransition(from, patch.status)) {
-      throw new InvalidTransitionError(from, patch.status);
-    }
+  const from = current.status as TicketStatus;
+  if (patch.status && from !== patch.status && !canTransition(from, patch.status)) {
+    throw new InvalidTransitionError(from, patch.status);
   }
 
   if (patch.message) {
@@ -496,14 +579,14 @@ export async function patchTicket(
       data: { ticketId: id, by: patch.message.by, text: patch.message.text },
     });
   }
-  if (patch.status) {
-    const from = current.status as TicketStatus;
-    if (from !== patch.status) {
-      await prisma.ticket.update({
-        where: { id },
-        data: { status: patch.status },
-      });
-    }
+
+  // Fold the status change and the branch-isolated review fields into a single
+  // ticket update so "Accept" (-> closed + final branch/previewUrl) or the agent
+  // parking a fix (-> reviewing + branch + previewUrl) is one write.
+  const data = reviewData(patch);
+  if (patch.status && from !== patch.status) data.status = patch.status;
+  if (Object.keys(data).length > 0) {
+    await prisma.ticket.update({ where: { id }, data });
   }
   return getHead(id);
 }

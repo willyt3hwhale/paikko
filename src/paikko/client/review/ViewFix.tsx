@@ -1,7 +1,9 @@
 /**
- * "View fix" slot - a link to the ticket's own route on the current origin,
- * where the agent's proposed fix is already running (the runner rebuilds the
- * fix into the same bundle). Open it, reproduce the steps, then Accept/Reject.
+ * "View fix" slot - a link to the ticket's OWN isolated preview, a separate
+ * OpenNext deployment (e.g. http://localhost:8788) where ONLY this ticket's fix
+ * runs on its own branch/worktree. The live app on main stays pristine until the
+ * reviewer Accepts. Open the ticket's route there, reproduce the steps, then
+ * Accept/Reject from the review UI on the main app.
  */
 
 "use client";
@@ -9,14 +11,13 @@
 import type { TicketHead } from "@/lib/contract";
 
 /**
- * URL where the proposed fix is live: the ticket's reported route on the
- * current origin. Returns null when there's nothing to preview yet (open) or
- * during SSR where there's no origin to resolve.
+ * URL where the proposed fix is live: the ticket's reported route on its
+ * ISOLATED preview origin (`ticket.previewUrl` + the reported route). Returns
+ * null when no isolated preview is up yet (the agent hasn't proposed a fix).
  */
 export function previewUrlForTicket(ticket: TicketHead): string | null {
-  if (ticket.status === "open") return null;
-  if (typeof window === "undefined") return null;
-  return `${window.location.origin}${ticket.report.route}`;
+  if (!ticket.previewUrl) return null;
+  return `${ticket.previewUrl}${ticket.report.route}`;
 }
 
 export function ViewFix({ ticket }: { ticket: TicketHead }) {
@@ -28,8 +29,8 @@ export function ViewFix({ ticket }: { ticket: TicketHead }) {
       {url ? (
         <>
           <p className="mt-1 text-xs text-neutral-500">
-            The fix is live on this app. Open the ticket&apos;s route, reproduce
-            the original steps, then Accept or Reject below.
+            View the proposed fix in its isolated preview. The live app is
+            unchanged until you Accept.
           </p>
           <a
             href={url}

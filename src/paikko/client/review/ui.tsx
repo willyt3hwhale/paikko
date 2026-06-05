@@ -17,6 +17,7 @@ const STATUS_STYLE: Record<TicketStatus, string> = {
   needs_info: "bg-purple-100 text-purple-800 ring-purple-600/20",
   reviewing: "bg-indigo-100 text-indigo-800 ring-indigo-600/20",
   closed: "bg-neutral-200 text-neutral-700 ring-neutral-500/20",
+  rejected: "bg-red-100 text-red-800 ring-red-600/20",
 };
 
 const STATUS_LABEL: Record<TicketStatus, string> = {
@@ -25,6 +26,7 @@ const STATUS_LABEL: Record<TicketStatus, string> = {
   needs_info: "needs info",
   reviewing: "reviewing",
   closed: "closed",
+  rejected: "rejected",
 };
 
 export function StatusBadge({ status }: { status: TicketStatus }) {

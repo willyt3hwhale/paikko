@@ -45,13 +45,24 @@ import { z } from "zod";
 /* Shared primitives                                                  */
 /* ------------------------------------------------------------------ */
 
-/** Ticket lifecycle. Mirrors the `TicketStatus` enum in prisma/schema.prisma. */
+/**
+ * Ticket lifecycle. `status` is persisted as a free `String` in
+ * prisma/schema.prisma; this enum is the app-side validator for it.
+ *
+ * Terminal states are `closed` (accepted: the ticket's branch was merged to main
+ * and the live app redeployed) and `rejected` (discarded: the ticket's branch +
+ * worktree were dropped, the live app untouched). `reviewing` is the parked state
+ * where the fix lives on its own branch with an isolated preview; a user reply on
+ * a `reviewing` ticket re-engages the agent (no separate reject needed to request
+ * changes).
+ */
 export const TicketStatusSchema = z.enum([
   "open",
   "reproducing",
   "needs_info",
   "reviewing",
   "closed",
+  "rejected",
 ]);
 export type TicketStatus = z.infer<typeof TicketStatusSchema>;
 
@@ -175,6 +186,18 @@ export const TicketHeadSchema = z.object({
   report: ReportSchema,
   thread: z.array(ThreadMessageSchema),
   artifacts: ArtifactIndexSchema,
+  /**
+   * The git branch the fix lives on (e.g. "ticket/{id}"). Branch-isolated review:
+   * each ticket is fixed in its own worktree + branch off main, so main stays
+   * pristine until Accept. Null until the agent has cut the branch.
+   */
+  branch: z.string().nullable(),
+  /**
+   * The isolated preview URL where ONLY this ticket's fix is viewable
+   * (e.g. "http://localhost:8788"), distinct from the pristine main app. "View
+   * fix" links here, not to the live app. Null until the isolated preview is up.
+   */
+  previewUrl: z.string().nullable(),
 });
 export type TicketHead = z.infer<typeof TicketHeadSchema>;
 

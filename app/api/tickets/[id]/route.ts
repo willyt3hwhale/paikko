@@ -25,10 +25,23 @@ const PatchBodySchema = z
     message: z
       .object({ by: z.string().min(1), text: z.string().min(1) })
       .optional(),
+    // Branch-isolated review fields: the agent sets these when it parks a fix in
+    // `reviewing` (the git branch + the isolated preview URL "View fix" links to).
+    // Both nullable - explicit `null` clears, omitted leaves unchanged.
+    branch: z.string().nullable().optional(),
+    previewUrl: z.string().nullable().optional(),
   })
-  .refine((b) => b.status !== undefined || b.message !== undefined, {
-    message: "patch must set at least one of `status` or `message`",
-  });
+  .refine(
+    (b) =>
+      b.status !== undefined ||
+      b.message !== undefined ||
+      "branch" in b ||
+      "previewUrl" in b,
+    {
+      message:
+        "patch must set at least one of `status`, `message`, `branch`, or `previewUrl`",
+    },
+  );
 
 export const GET = withCapture(
   async (_req: NextRequest, ctx: Ctx) => {
