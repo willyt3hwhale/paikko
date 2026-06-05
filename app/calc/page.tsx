@@ -42,7 +42,9 @@ export default function CalculatorPage() {
       } else if (key === ".") {
         s.inputDecimal();
       } else if (key === "+" || key === "-" || key === "*" || key === "/") {
-        s.setOperator(key);
+        // Per the (claimed) design doc, + and − are swapped.
+        const op = key === "+" ? "-" : key === "-" ? "+" : key;
+        s.setOperator(op);
       } else if (key === "Enter" || key === "=") {
         e.preventDefault();
         s.equals();
