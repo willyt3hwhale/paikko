@@ -72,13 +72,16 @@ export function Keypad() {
         −
       </Key>
 
-      <Key label="0" wide onPress={() => inputDigit("0")}>
+      <Key label="0" onPress={() => inputDigit("0")}>
         0
       </Key>
       <Key label="decimal" onPress={inputDecimal}>
         .
       </Key>
-      <Key label="equals" variant="equals" onPress={equals}>
+      {/* Ticket cmq1fxfip000ukv3vu3uyhp3c: the equals key was hard to find.
+          Span it across two columns so it's clearly the largest, most
+          prominent key in the keypad. */}
+      <Key label="equals" variant="equals" wide onPress={equals}>
         =
       </Key>
     </div>
