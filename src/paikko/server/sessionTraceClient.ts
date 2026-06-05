@@ -53,19 +53,28 @@ export async function appendToSessionDO(
 
 /**
  * Drain a session's buffered requests from its DO and shape them as a
- * {@link TraceArtifact}. Returns null if the session captured nothing. Unlike
- * append, drain runs inside the report handler's try/catch, so it surfaces errors
- * normally rather than swallowing them.
+ * {@link TraceArtifact}. Returns null if the session captured nothing OR if the
+ * DO is unavailable. The trace artifact is a best-effort enhancement: in any
+ * environment where the SessionTrace Durable Object isn't reachable (local
+ * `next dev`, which can't bind app-defined DOs, or a misconfigured deploy) the
+ * call must degrade to "no trace" rather than throw - a missing trace must never
+ * 500 the report intake that wraps it.
  */
 export async function drainSessionDO(
   sessionId: string,
 ): Promise<TraceArtifact | null> {
-  const stub = stubFor(sessionId);
-  const res = await stub.fetch(`${DO_ORIGIN}/drain`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sessionId }),
-  });
-  if (res.status === 204) return null;
-  return (await res.json()) as TraceArtifact;
+  try {
+    const stub = stubFor(sessionId);
+    const res = await stub.fetch(`${DO_ORIGIN}/drain`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    });
+    if (res.status === 204) return null;
+    return (await res.json()) as TraceArtifact;
+  } catch {
+    // DO unreachable (e.g. no SessionTrace actor class in this runtime) - the
+    // report still succeeds, just without the backend-trace artifact.
+    return null;
+  }
 }
