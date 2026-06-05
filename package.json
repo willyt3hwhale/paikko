@@ -18,10 +18,10 @@
     "d1:migrate:remote": "wrangler d1 migrations apply paikko --remote"
   },
   "dependencies": {
-    "@opennextjs/cloudflare": "^0.6.6",
+    "@opennextjs/cloudflare": "^1.19.11",
     "@prisma/adapter-d1": "^5.22.0",
     "@prisma/client": "^5.22.0",
-    "next": "^14.2.15",
+    "next": "^15.5.19",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zod": "^3.23.8",

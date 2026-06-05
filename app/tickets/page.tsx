@@ -18,8 +18,8 @@ export const dynamic = "force-dynamic";
 const TicketHeadListSchema = z.array(TicketHeadSchema);
 
 /** Resolve the app origin from the inbound request so server fetch is absolute. */
-function originFromHeaders(): string {
-  const h = headers();
+async function originFromHeaders(): Promise<string> {
+  const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto =
     h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
@@ -27,7 +27,7 @@ function originFromHeaders(): string {
 }
 
 async function loadTickets(): Promise<TicketHead[]> {
-  const res = await fetch(`${originFromHeaders()}/tickets`, {
+  const res = await fetch(`${await originFromHeaders()}/tickets`, {
     cache: "no-store",
     headers: { accept: "application/json" },
   });

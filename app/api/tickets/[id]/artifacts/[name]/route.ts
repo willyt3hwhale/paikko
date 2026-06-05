@@ -17,13 +17,14 @@ import { withCapture } from "@/paikko/server/withCapture";
 import { getArtifactPayload } from "@/paikko/server/tickets/store";
 import { errorToResponse } from "@/paikko/server/tickets/http";
 
-type Ctx = { params: { id: string; name: string } };
+type Ctx = { params: Promise<{ id: string; name: string }> };
 
 export const GET = withCapture(
   async (_req: NextRequest, ctx: Ctx) => {
     try {
-      const artifactName = ArtifactNameSchema.parse(ctx.params.name);
-      const payload = await getArtifactPayload(ctx.params.id, artifactName);
+      const { id, name } = await ctx.params;
+      const artifactName = ArtifactNameSchema.parse(name);
+      const payload = await getArtifactPayload(id, artifactName);
       return NextResponse.json(payload);
     } catch (err) {
       return errorToResponse(err);

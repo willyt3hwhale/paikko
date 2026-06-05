@@ -16,6 +16,11 @@
 // @ts-ignore `.open-next/worker.js` is generated at build time by OpenNext.
 import { default as handler } from "./.open-next/worker.js";
 
-export default handler;
+// OpenNext 1.x's generated worker exports an object with a `fetch` method
+// (`export default { fetch }`), so we forward `fetch` explicitly rather than
+// re-exporting the module default wholesale.
+export default {
+  fetch: handler.fetch,
+} satisfies ExportedHandler<CloudflareEnv>;
 
 export { SessionTrace } from "./src/paikko/server/sessionTraceDO";

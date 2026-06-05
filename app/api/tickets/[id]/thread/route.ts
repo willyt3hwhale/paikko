@@ -14,7 +14,7 @@ import { withCapture } from "@/paikko/server/withCapture";
 import { appendThreadMessage } from "@/paikko/server/tickets/store";
 import { errorToResponse } from "@/paikko/server/tickets/http";
 
-type Ctx = { params: { id: string } };
+type Ctx = { params: Promise<{ id: string }> };
 
 const ThreadBodySchema = z.object({
   by: z.string().min(1),
@@ -26,7 +26,8 @@ export const POST = withCapture(
     try {
       const body = await req.json();
       const { by, text } = ThreadBodySchema.parse(body);
-      const head = await appendThreadMessage(ctx.params.id, by, text);
+      const { id } = await ctx.params;
+      const head = await appendThreadMessage(id, by, text);
       const appended = head.thread[head.thread.length - 1];
       return NextResponse.json(appended);
     } catch (err) {

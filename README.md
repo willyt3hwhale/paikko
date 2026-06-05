@@ -144,9 +144,12 @@ The first deploy registers the `SessionTrace` Durable Object migration (tag `v1`
   still enforced (illegal edges throw before any write); the only weakened
   guarantee is atomicity against a concurrent racer, which the single serial v0
   runner does not hit.
-- **Next.js 14 is supported by OpenNext 0.6.x but support is being dropped in 2026.**
-  Plan a Next 15 upgrade (note: Next 15 makes route `params` a Promise, a code
-  change) and bump to `@opennextjs/cloudflare@1.x` when you do.
+- **Next.js 15 on `@opennextjs/cloudflare@1.x`.** The app runs Next 15.5 with the
+  OpenNext 1.x adapter (which requires Next >= 15.5.18). Next 15 makes route
+  `params`/`searchParams` and `headers()`/`cookies()` async, so dynamic route
+  handlers and server components `await` them - already done across this repo.
+  React stays on 18.3 (Next 15.5 supports both 18.x and 19.x; 18.3 is kept to
+  minimise churn).
 
 ## Roadmap
 

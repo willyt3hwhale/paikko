@@ -14,8 +14,13 @@
   // node:async_hooks which the paikko trace seam relies on). Date must be
   // >= 2024-09-23 for OpenNext; >= 2025-04-01 also auto-populates process.env
   // from vars, which Next expects.
+  //
+  // global_fetch_strictly_public: recommended by @opennextjs/cloudflare 1.x so
+  // that `fetch()` to the app's own public URL (the server components here resolve
+  // their origin from request headers and fetch the ticket API) routes back through
+  // the Worker's public entry instead of being treated as an internal sub-request.
   "compatibility_date": "2025-04-01",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
   // Static assets emitted by the OpenNext build, served by the Workers runtime.
   "assets": {

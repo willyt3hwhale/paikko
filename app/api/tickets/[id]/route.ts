@@ -17,7 +17,7 @@ import { withCapture } from "@/paikko/server/withCapture";
 import { getHead, patchTicket } from "@/paikko/server/tickets/store";
 import { errorToResponse } from "@/paikko/server/tickets/http";
 
-type Ctx = { params: { id: string } };
+type Ctx = { params: Promise<{ id: string }> };
 
 const PatchBodySchema = z
   .object({
@@ -33,7 +33,8 @@ const PatchBodySchema = z
 export const GET = withCapture(
   async (_req: NextRequest, ctx: Ctx) => {
     try {
-      const head = await getHead(ctx.params.id);
+      const { id } = await ctx.params;
+      const head = await getHead(id);
       return NextResponse.json(head);
     } catch (err) {
       return errorToResponse(err);
@@ -47,7 +48,8 @@ export const PATCH = withCapture(
     try {
       const body = await req.json();
       const patch = PatchBodySchema.parse(body);
-      const head = await patchTicket(ctx.params.id, patch);
+      const { id } = await ctx.params;
+      const head = await patchTicket(id, patch);
       return NextResponse.json(head);
     } catch (err) {
       return errorToResponse(err);

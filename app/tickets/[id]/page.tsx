@@ -15,8 +15,8 @@ import { TicketDetail } from "@/paikko/client/review";
 
 export const dynamic = "force-dynamic";
 
-function originFromHeaders(): string {
-  const h = headers();
+async function originFromHeaders(): Promise<string> {
+  const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto =
     h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
@@ -25,7 +25,7 @@ function originFromHeaders(): string {
 
 async function loadTicket(id: string): Promise<TicketHead | null> {
   const res = await fetch(
-    `${originFromHeaders()}/tickets/${encodeURIComponent(id)}`,
+    `${await originFromHeaders()}/tickets/${encodeURIComponent(id)}`,
     { cache: "no-store", headers: { accept: "application/json" } },
   );
   if (res.status === 404) return null;
@@ -38,12 +38,13 @@ async function loadTicket(id: string): Promise<TicketHead | null> {
 export default async function TicketPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
   let ticket: TicketHead | null;
   let error: string | null = null;
   try {
-    ticket = await loadTicket(params.id);
+    const { id } = await params;
+    ticket = await loadTicket(id);
   } catch (err) {
     ticket = null;
     error = err instanceof Error ? err.message : "Failed to load ticket.";
