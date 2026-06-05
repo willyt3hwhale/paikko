@@ -1,8 +1,7 @@
 /**
- * "View fix" slot - a link to the preview-per-ticket deploy where the agent's
- * proposed fix is running. The real URL comes from the agent runner once it
- * spins up a preview env; until that lands this stubs the convention so the
- * review UI has the slot wired and styled.
+ * "View fix" slot - a link to the ticket's own route on the current origin,
+ * where the agent's proposed fix is already running (the runner rebuilds the
+ * fix into the same bundle). Open it, reproduce the steps, then Accept/Reject.
  */
 
 "use client";
@@ -10,15 +9,14 @@
 import type { TicketHead } from "@/lib/contract";
 
 /**
- * Stub for the preview-per-ticket URL. The agent runner will publish the real
- * deploy URL (env or ticket metadata); for now we synthesise the convention so
- * the slot renders. Returns null when there's nothing meaningful to preview yet.
+ * URL where the proposed fix is live: the ticket's reported route on the
+ * current origin. Returns null when there's nothing to preview yet (open) or
+ * during SSR where there's no origin to resolve.
  */
 export function previewUrlForTicket(ticket: TicketHead): string | null {
-  // Convention placeholder: preview-<id>.paikko.preview. Swap for the real
-  // deploy URL when the runner provides it.
   if (ticket.status === "open") return null;
-  return `https://preview-${ticket.id}.paikko.preview${ticket.report.route}`;
+  if (typeof window === "undefined") return null;
+  return `${window.location.origin}${ticket.report.route}`;
 }
 
 export function ViewFix({ ticket }: { ticket: TicketHead }) {
@@ -30,8 +28,8 @@ export function ViewFix({ ticket }: { ticket: TicketHead }) {
       {url ? (
         <>
           <p className="mt-1 text-xs text-neutral-500">
-            Preview deploy for this ticket. Open it, reproduce the original
-            steps, then Accept or Reject below.
+            The fix is live on this app. Open the ticket&apos;s route, reproduce
+            the original steps, then Accept or Reject below.
           </p>
           <a
             href={url}
@@ -43,7 +41,6 @@ export function ViewFix({ ticket }: { ticket: TicketHead }) {
           </a>
           <p className="mt-2 break-all font-mono text-[0.6875rem] text-neutral-400">
             {url}
-            <span className="ml-1 not-italic text-amber-600">(stub)</span>
           </p>
         </>
       ) : (

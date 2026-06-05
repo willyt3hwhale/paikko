@@ -317,7 +317,7 @@ export function ReportButton({
         </div>
       )}
 
-      {(phase === "idle" || phase === "pointing" || phase === "done") && (
+      {(phase === "idle" || phase === "pointing") && (
         <button
           type="button"
           data-paikko-ui="fab"

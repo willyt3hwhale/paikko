@@ -29,7 +29,9 @@ export function ReviewActions({
   const [mode, setMode] = useState<Mode>("none");
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [busy, setBusy] = useState(false);
+  const [, startTransition] = useTransition();
+  const pending = busy;
 
   const isClosed = ticket.status === "closed";
   // Accept (-> closed) and Reject (-> reproducing) are only legal edges out of
@@ -57,18 +59,26 @@ export function ReviewActions({
     );
   }
 
-  function run(action: () => Promise<void>) {
+  async function run(action: () => Promise<void>) {
+    // `busy` keeps every action button disabled for the whole in-flight window;
+    // we don't lean on startTransition's pending flag because passing an async
+    // function to startTransition (React 18) only tracks its synchronous prefix.
     setError(null);
-    startTransition(async () => {
-      try {
-        await action();
+    setBusy(true);
+    try {
+      await action();
+      await onChanged();
+      // Only the synchronous post-mutation state flushes go through the
+      // transition, so the re-render off fresh server state stays low priority.
+      startTransition(() => {
         setText("");
         setMode("none");
-        await onChanged();
-      } catch (err) {
-        fail(err);
-      }
-    });
+      });
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
   }
 
   const accept = () =>
