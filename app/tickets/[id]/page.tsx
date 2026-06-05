@@ -1,53 +1,37 @@
 /**
  * /tickets/[id] - the single-ticket review view.
  *
- * Server component: fetches the tier-1 head from the ticket API and hands it to
- * the interactive client `<TicketDetail>`, which renders the message, the
- * clicked-target provenance, the thread, lazy artifact panels, the "View fix"
- * preview slot, and the Accept / Reject / Reply actions. Tier-2 artifact
- * payloads are fetched client-side on expand, never here.
+ * Server component: reads the tier-1 head straight from the ticket store (direct
+ * DB access; no fragile HTTP self-fetch) and hands it to the interactive client
+ * `<TicketDetail>`, which renders the message, the clicked-target provenance, the
+ * thread, lazy artifact panels, the "View fix" preview slot, and the Accept /
+ * Reject / Reply actions. Tier-2 artifact payloads are fetched client-side on
+ * expand, never here.
  */
 
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { TicketHeadSchema, type TicketHead } from "@/lib/contract";
+import { type TicketHead } from "@/lib/contract";
 import { TicketDetail } from "@/paikko/client/review";
+import { getHead, TicketNotFoundError } from "@/paikko/server/tickets/store";
 
 export const dynamic = "force-dynamic";
-
-async function originFromHeaders(): Promise<string> {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto =
-    h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
-}
-
-async function loadTicket(id: string): Promise<TicketHead | null> {
-  const res = await fetch(
-    `${await originFromHeaders()}/tickets/${encodeURIComponent(id)}`,
-    { cache: "no-store", headers: { accept: "application/json" } },
-  );
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`Failed to load ticket: ${res.status} ${res.statusText}`);
-  }
-  return TicketHeadSchema.parse(await res.json());
-}
 
 export default async function TicketPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  let ticket: TicketHead | null;
+  let ticket: TicketHead | null = null;
   let error: string | null = null;
   try {
     const { id } = await params;
-    ticket = await loadTicket(id);
+    ticket = await getHead(id);
   } catch (err) {
-    ticket = null;
-    error = err instanceof Error ? err.message : "Failed to load ticket.";
+    if (err instanceof TicketNotFoundError) {
+      ticket = null;
+    } else {
+      error = err instanceof Error ? err.message : "Failed to load ticket.";
+    }
   }
 
   if (!ticket && !error) notFound();

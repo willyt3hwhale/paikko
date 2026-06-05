@@ -27,7 +27,7 @@ import {
 import { z } from "zod";
 
 /** Base path for the ticket API. Relative so it works behind any host. */
-const BASE = "/tickets";
+const BASE = "/api/tickets";
 
 const TicketHeadListSchema = z.array(TicketHeadSchema);
 

@@ -1,47 +1,25 @@
 /**
  * /tickets - the review queue.
  *
- * Server component: fetches the tier-1 heads from the ticket API (owned by the
- * API module) and hands them to the client `<TicketList>` for rendering. The
- * head is small and always safe to load up front; tier-2 artifacts are fetched
- * lazily from inside the single-ticket view, never here.
+ * Server component: reads the tier-1 heads straight from the ticket store (it
+ * has DB access; no HTTP round-trip to our own API - that self-fetch is fragile
+ * on Workers and pointless from a server component) and hands them to the client
+ * `<TicketList>`. The head is small and always safe to load up front; tier-2
+ * artifacts are fetched lazily from inside the single-ticket view, never here.
  */
 
-import { headers } from "next/headers";
-import { TicketHeadSchema, type TicketHead } from "@/lib/contract";
+import { type TicketHead } from "@/lib/contract";
 import { TicketList } from "@/paikko/client/review";
-import { z } from "zod";
+import { listHeads } from "@/paikko/server/tickets/store";
 
 // Always reflect the live queue; tickets change as the agent works them.
 export const dynamic = "force-dynamic";
-
-const TicketHeadListSchema = z.array(TicketHeadSchema);
-
-/** Resolve the app origin from the inbound request so server fetch is absolute. */
-async function originFromHeaders(): Promise<string> {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto =
-    h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
-}
-
-async function loadTickets(): Promise<TicketHead[]> {
-  const res = await fetch(`${await originFromHeaders()}/tickets`, {
-    cache: "no-store",
-    headers: { accept: "application/json" },
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to load tickets: ${res.status} ${res.statusText}`);
-  }
-  return TicketHeadListSchema.parse(await res.json());
-}
 
 export default async function TicketsPage() {
   let tickets: TicketHead[] = [];
   let error: string | null = null;
   try {
-    tickets = await loadTickets();
+    tickets = await listHeads();
   } catch (err) {
     error = err instanceof Error ? err.message : "Failed to load tickets.";
   }

@@ -191,7 +191,7 @@ function payloadCount(name: ArtifactName, payload: unknown): number | null {
 
 /** Build the `ref` fetch handle for an artifact. */
 function artifactRef(ticketId: string, name: ArtifactName): string {
-  return `GET /tickets/${ticketId}/artifacts/${name}`;
+  return `GET /api/tickets/${ticketId}/artifacts/${name}`;
 }
 
 /** Assemble one artifact index entry from its stored row. */
