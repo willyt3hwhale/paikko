@@ -53,8 +53,8 @@ export function Keypad() {
       <Key label="6" onPress={() => inputDigit("6")}>
         6
       </Key>
-      <Key label="subtract" variant="operator" onPress={() => setOperator("-")}>
-        −
+      <Key label="add" variant="operator" onPress={() => setOperator("+")}>
+        +
       </Key>
 
       <Key label="1" onPress={() => inputDigit("1")}>
@@ -66,8 +66,8 @@ export function Keypad() {
       <Key label="3" onPress={() => inputDigit("3")}>
         3
       </Key>
-      <Key label="add" variant="operator" onPress={() => setOperator("+")}>
-        +
+      <Key label="subtract" variant="operator" onPress={() => setOperator("-")}>
+        −
       </Key>
 
       <Key label="0" wide onPress={() => inputDigit("0")}>
