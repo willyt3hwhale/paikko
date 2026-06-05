@@ -1,0 +1,64 @@
+// paikko ticket store - v0 SQLite.
+// Mirrors the persisted side of the ticket bundle defined in src/lib/contract.ts.
+// The contract is the source of truth for shapes; these models are how the head
+// and artifacts land on disk. Artifact.payload is opaque JSON validated by the
+// matching zod schema in the contract before it is written/read.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum TicketStatus {
+  open
+  reproducing
+  needs_info
+  reviewing
+  closed
+}
+
+model Ticket {
+  id             String       @id @default(cuid())
+  status         TicketStatus @default(open)
+  kind           String
+  reporter       String
+  route          String
+  targetSelector String?
+  targetSrc      String?
+  targetComponent String?
+  message        String
+  createdAt      DateTime     @default(now())
+
+  thread    ThreadMessage[]
+  artifacts Artifact[]
+}
+
+model ThreadMessage {
+  id       String   @id @default(cuid())
+  ticketId String
+  by       String
+  text     String
+  at       DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+}
+
+model Artifact {
+  id        String   @id @default(cuid())
+  ticketId  String
+  name      String
+  summary   String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, name])
+  @@index([ticketId])
+}

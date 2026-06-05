@@ -1,0 +1,16 @@
+/**
+ * Prisma client singleton. Avoids exhausting connections under Next's dev HMR by
+ * caching the client on globalThis.
+ */
+import { PrismaClient } from "@prisma/client";
+
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
+
+export const prisma =
+  globalForPrisma.prisma ?? new PrismaClient();
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
+}
