@@ -25,8 +25,23 @@ const STATUS_LABEL: Record<TicketStatus, string> = {
   reproducing: "reproducing",
   needs_info: "needs info",
   reviewing: "reviewing",
-  closed: "closed",
+  closed: "accepted",
   rejected: "rejected",
+};
+
+/**
+ * Which list section a status belongs to. "needs" pins at the top and is
+ * accented; "progress" is neutral; "done" is terminal and collapsed.
+ */
+export type TicketGroup = "needs" | "progress" | "done";
+
+export const STATUS_GROUP: Record<TicketStatus, TicketGroup> = {
+  reviewing: "needs",
+  needs_info: "needs",
+  open: "progress",
+  reproducing: "progress",
+  closed: "done",
+  rejected: "done",
 };
 
 export function StatusBadge({ status }: { status: TicketStatus }) {

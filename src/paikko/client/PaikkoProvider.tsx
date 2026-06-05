@@ -12,10 +12,16 @@
  */
 import React from "react";
 import { ReportButton } from "./ReportButton";
+import { PaikkoNav } from "./PaikkoNav";
 import { getState } from "./store";
 
 export function PaikkoProvider(): React.JSX.Element {
-  return <ReportButton getClientState={getState} />;
+  return (
+    <>
+      <ReportButton getClientState={getState} />
+      <PaikkoNav />
+    </>
+  );
 }
 
 export default PaikkoProvider;
