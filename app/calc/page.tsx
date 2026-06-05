@@ -50,25 +50,26 @@ export default function CalculatorPage() {
     <main
       className={[
         "flex min-h-screen flex-col items-center justify-center p-6",
-        dark ? "bg-neutral-950" : "bg-neutral-100",
+        dark ? "bg-slate-950" : "bg-slate-200",
       ].join(" ")}
     >
       <section
+        dir="rtl"
         className={[
-          "calc-app w-full max-w-xs rounded-3xl p-5 shadow-xl ring-1",
+          "calc-app w-full max-w-xs rounded-lg border p-5 shadow-md",
           dark
-            ? "bg-neutral-800 ring-neutral-700"
-            : "bg-white ring-neutral-200",
+            ? "border-slate-700 bg-slate-900"
+            : "border-slate-300 bg-slate-100",
         ].join(" ")}
       >
         <header className="mb-4 flex items-center justify-between">
           <h1
             className={[
-              "text-lg font-semibold",
-              dark ? "text-neutral-100" : "text-neutral-800",
+              "font-mono text-base font-bold tracking-widest uppercase",
+              dark ? "text-teal-300" : "text-slate-700",
             ].join(" ")}
           >
-            Calculator
+            Calc
           </h1>
           <div className="flex items-center gap-3">
             <button
@@ -77,21 +78,21 @@ export default function CalculatorPage() {
               aria-pressed={dark}
               onClick={() => setDark((d) => !d)}
               className={[
-                "calc-dark-toggle rounded-full px-2 py-1 text-sm transition-colors select-none",
+                "calc-dark-toggle rounded-sm border px-2 py-0.5 font-mono text-xs tracking-wide uppercase transition-colors select-none",
                 dark
-                  ? "text-neutral-300 hover:text-white"
-                  : "text-neutral-400 hover:text-neutral-600",
+                  ? "border-slate-600 text-slate-300 hover:bg-slate-800"
+                  : "border-slate-400 text-slate-500 hover:bg-slate-200",
               ].join(" ")}
             >
-              {dark ? "☀️" : "🌙"}
+              {dark ? "Light" : "Dark"}
             </button>
             <Link
               href="/"
               className={[
-                "text-sm",
+                "font-mono text-xs tracking-wide uppercase",
                 dark
-                  ? "text-neutral-400 hover:text-neutral-200"
-                  : "text-neutral-400 hover:text-neutral-600",
+                  ? "text-slate-400 hover:text-teal-300"
+                  : "text-slate-500 hover:text-slate-700",
               ].join(" ")}
             >
               Home
@@ -105,8 +106,8 @@ export default function CalculatorPage() {
       </section>
       <p
         className={[
-          "mt-6 text-xs",
-          dark ? "text-neutral-500" : "text-neutral-400",
+          "mt-6 font-mono text-xs",
+          dark ? "text-slate-600" : "text-slate-400",
         ].join(" ")}
       >
         Something off? Hit the Report button to file it.

@@ -4,11 +4,14 @@ import type { ReactNode } from "react";
 
 type KeyVariant = "digit" | "operator" | "function" | "equals";
 
+// Flat, square, high-contrast keys - deliberately not the iOS rounded-pill /
+// orange look. Digits are slate, functions are a muted steel, operators/equals
+// use a teal accent instead of Apple's amber.
 const VARIANT_CLASS: Record<KeyVariant, string> = {
-  digit: "bg-neutral-200 text-neutral-900 hover:bg-neutral-300",
-  operator: "bg-amber-500 text-white hover:bg-amber-400",
-  function: "bg-neutral-300 text-neutral-900 hover:bg-neutral-400",
-  equals: "bg-amber-500 text-white hover:bg-amber-400",
+  digit: "bg-slate-700 text-slate-100 hover:bg-slate-600",
+  operator: "bg-teal-700 text-teal-50 hover:bg-teal-600",
+  function: "bg-slate-800 text-slate-300 hover:bg-slate-700",
+  equals: "bg-teal-500 text-slate-950 hover:bg-teal-400",
 };
 
 /**
@@ -40,8 +43,8 @@ export function Key({
         `calc-key-${label}`,
         VARIANT_CLASS[variant],
         wide ? "col-span-2" : "",
-        "flex h-16 items-center justify-center rounded-2xl text-2xl font-medium",
-        "transition-colors select-none active:scale-95",
+        "flex h-16 items-center justify-center rounded-md text-2xl font-semibold tracking-wide",
+        "border border-black/40 transition-colors select-none active:translate-y-px",
       ].join(" ")}
     >
       {children}

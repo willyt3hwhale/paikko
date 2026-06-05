@@ -25,12 +25,15 @@ export function Display() {
       : " ";
 
   return (
-    <div className="calc-display flex flex-col items-end justify-end gap-1 rounded-2xl bg-neutral-900 px-6 py-5 text-white">
-      <div className="calc-display-pending h-5 text-sm font-medium text-neutral-400">
+    <div
+      dir="ltr"
+      className="calc-display flex flex-col items-end justify-end gap-1 rounded-md border border-teal-900/60 bg-slate-950 px-6 py-5 font-mono text-teal-300 shadow-inner"
+    >
+      <div className="calc-display-pending h-5 text-sm font-medium text-teal-600">
         {pending}
       </div>
       <div
-        className="calc-display-current w-full truncate text-right text-5xl font-light tabular-nums"
+        className="calc-display-current w-full truncate text-right text-5xl font-medium tabular-nums"
         data-testid="calc-display"
       >
         {current}
