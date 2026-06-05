@@ -13,7 +13,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { ReportBundleSchema } from "@/lib/contract";
-import { withCapture } from "@/paikko/server/withCapture";
+import {
+  withCapture,
+  buildTraceArtifact,
+  SESSION_HEADER,
+} from "@/paikko/server/withCapture";
 import { createTicketFromBundle } from "@/paikko/server/tickets/store";
 import { errorToResponse } from "@/paikko/server/tickets/http";
 
@@ -22,6 +26,19 @@ export const POST = withCapture(
     try {
       const body = await req.json();
       const bundle = ReportBundleSchema.parse(body);
+
+      // Drain the backend trace buffered for this capture session and attach it
+      // as the `trace` artifact, so the agent gets the server side of the
+      // interaction. The store validates it against ArtifactPayloadSchemas.trace
+      // and splits it out like every other artifact.
+      const sessionId = req.headers.get(SESSION_HEADER);
+      if (sessionId) {
+        const trace = buildTraceArtifact(sessionId);
+        if (trace) {
+          bundle.artifacts = { ...bundle.artifacts, trace };
+        }
+      }
+
       const { id } = await createTicketFromBundle(bundle);
       return NextResponse.json({ id }, { status: 201 });
     } catch (err) {

@@ -37,9 +37,41 @@ import {
 /** Header that carries the frontend trace id to the backend capture wrapper. */
 export const TRACE_HEADER = "x-paikko-trace";
 
+/** Header that carries the stable capture session id to the backend. */
+export const SESSION_HEADER = "x-paikko-session";
+
+/** sessionStorage key under which the stable session id is persisted. */
+const SESSION_KEY = "paikko.sessionId";
+
+/**
+ * Mint (once) and return the stable capture session id for this browsing session.
+ * Persisted in sessionStorage so every request and the final report bundle share
+ * the same id - that is what lets the server drain exactly this session's buffered
+ * backend requests into the `trace` artifact. Falls back to an in-memory id when
+ * sessionStorage is unavailable (SSR, sandboxed contexts).
+ */
+let memorySessionId: string | null = null;
+export function getSessionId(): string {
+  if (typeof window === "undefined" || typeof sessionStorage === "undefined") {
+    if (!memorySessionId) memorySessionId = genTraceId();
+    return memorySessionId;
+  }
+  try {
+    let id = sessionStorage.getItem(SESSION_KEY);
+    if (!id) {
+      id = genTraceId();
+      sessionStorage.setItem(SESSION_KEY, id);
+    }
+    return id;
+  } catch {
+    if (!memorySessionId) memorySessionId = genTraceId();
+    return memorySessionId;
+  }
+}
+
 /** Provenance attribute injected at build time (see PROVENANCE.md). */
 const SRC_ATTR = "data-src";
-const COMPONENT_ATTR = "data-component";
+const COMPONENT_ATTR = "data-paikko-component";
 
 export interface CaptureConfig {
   /** Console ring buffer capacity (lines kept, oldest evicted). */
@@ -259,6 +291,7 @@ export class Capture {
         init?.headers ?? (input instanceof Request ? input.headers : undefined),
       );
       headers.set(TRACE_HEADER, traceId);
+      headers.set(SESSION_HEADER, getSessionId());
       const nextInit: RequestInit = { ...init, headers };
 
       const reqBody = await self.readRequestBody(input, init);
@@ -386,6 +419,7 @@ export class Capture {
         try {
           if (!meta.headerInjected) {
             setHeaderOrig.call(this, TRACE_HEADER, meta.traceId);
+            setHeaderOrig.call(this, SESSION_HEADER, getSessionId());
             meta.headerInjected = true;
           }
         } catch {

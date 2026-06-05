@@ -6,3 +6,6 @@ build/
 .env
 .env.local
 .DS_Store
+*.tsbuildinfo
+prisma/dev.db
+prisma/dev.db-journal

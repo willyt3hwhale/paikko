@@ -23,7 +23,7 @@ export const GET = withCapture(
         ? TicketStatusSchema.parse(statusParam)
         : undefined;
       const heads = await listHeads(status);
-      return NextResponse.json({ tickets: heads });
+      return NextResponse.json(heads);
     } catch (err) {
       return errorToResponse(err);
     }

@@ -136,6 +136,20 @@ function jsonSize(value: unknown): number {
 }
 
 /**
+ * Decode a stored artifact payload. SQLite has no JSON column type, so payloads
+ * are persisted as JSON strings; this turns the stored string back into the value
+ * the contract schemas expect. Already-decoded values (defensive) pass through.
+ */
+function decodePayload(stored: unknown): unknown {
+  if (typeof stored !== "string") return stored;
+  try {
+    return JSON.parse(stored);
+  } catch {
+    return stored;
+  }
+}
+
+/**
  * Record count for an artifact payload: array length for collections, null for
  * single-object artifacts (clientState, storage, dom, trace-session). Matches
  * the contract's `count` semantics ("null for singletons").
@@ -155,11 +169,12 @@ function artifactRef(ticketId: string, name: ArtifactName): string {
 /** Assemble one artifact index entry from its stored row. */
 function toIndexEntry(ticketId: string, row: ArtifactRow): ArtifactIndexEntry {
   const name = ArtifactNameSchema.parse(row.name);
+  const payload = decodePayload(row.payload);
   return {
     ref: artifactRef(ticketId, name),
     summary: row.summary,
-    count: payloadCount(name, row.payload),
-    size: row.size ?? jsonSize(row.payload),
+    count: payloadCount(name, payload),
+    size: row.size ?? jsonSize(payload),
   };
 }
 
@@ -274,7 +289,9 @@ export async function createTicketFromBundle(
       {
         name,
         summary: summarize(name, payload),
-        payload: payload as ArtifactPayloadMap[typeof name],
+        // SQLite has no JSON column; persist the validated payload as a JSON
+        // string and decode it on read.
+        payload: JSON.stringify(payload),
       },
     ];
   });
@@ -348,7 +365,9 @@ export async function getArtifactPayload<N extends ArtifactName>(
   });
   if (!row) throw new ArtifactNotFoundError(ticketId, name);
 
-  return ArtifactPayloadSchemas[name].parse(row.payload) as ArtifactPayloadMap[N];
+  return ArtifactPayloadSchemas[name].parse(
+    decodePayload(row.payload),
+  ) as ArtifactPayloadMap[N];
 }
 
 /* ------------------------------------------------------------------ */

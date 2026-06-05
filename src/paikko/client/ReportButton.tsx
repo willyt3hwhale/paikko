@@ -29,6 +29,8 @@ import {
   Capture,
   resolveTarget,
   snapshotArtifacts,
+  getSessionId,
+  SESSION_HEADER,
   type CaptureConfig,
 } from "./capture";
 
@@ -169,7 +171,10 @@ export function ReportButton({
       try {
         const res = await fetch(endpoint, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            [SESSION_HEADER]: getSessionId(),
+          },
           body: JSON.stringify(parsed.data),
         });
         if (!res.ok) {

@@ -13,17 +13,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum TicketStatus {
-  open
-  reproducing
-  needs_info
-  reviewing
-  closed
-}
-
 model Ticket {
   id             String       @id @default(cuid())
-  status         TicketStatus @default(open)
+  status         String       @default("open")
   kind           String
   reporter       String
   route          String
@@ -54,7 +46,7 @@ model Artifact {
   ticketId  String
   name      String
   summary   String
-  payload   Json
+  payload   String
   createdAt DateTime @default(now())
 
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)

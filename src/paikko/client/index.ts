@@ -16,6 +16,8 @@ export {
   snapshotStorage,
   snapshotDom,
   snapshotArtifacts,
+  getSessionId,
   TRACE_HEADER,
+  SESSION_HEADER,
 } from "./capture";
 export type { CaptureConfig, CapturedArtifacts } from "./capture";
