@@ -74,3 +74,19 @@ model Artifact {
   @@unique([ticketId, name])
   @@index([ticketId])
 }
+
+// Cross-request backend-trace buffer (D1-backed). The capture seam appends one
+// row per finished request keyed by sessionId; the report intake drains all rows
+// for a session to build the `trace` artifact. This replaces the SessionTrace
+// Durable Object as the default buffer: D1 is available in every environment
+// (including local `next dev`, where app-defined Durable Objects are not), so
+// trace populates everywhere. `payload` is the JSON-serialized TraceRequest
+// (stored as String, matching how Artifact payloads are kept for SQLite/D1).
+model TraceEntry {
+  id        String   @id @default(cuid())
+  sessionId String
+  payload   String
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}

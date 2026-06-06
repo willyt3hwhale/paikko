@@ -1,7 +1,19 @@
 /**
- * `SessionTrace` Durable Object - the durable backend-trace buffer.
+ * `SessionTrace` Durable Object - LEGACY backend-trace buffer.
  *
- * ## Why this exists
+ * ## Status: no longer wired in
+ *
+ * This DO was the original cross-request trace buffer. It is kept as a reference
+ * but is NOT the active buffer anymore: app-defined Durable Objects don't run
+ * under local `next dev` ("no such actor class; SessionTrace"), so the trace
+ * artifact was always absent in local development. The buffer now lives in a
+ * D1-backed table (`sessionTraceD1.ts`), which works in every environment. The
+ * capture seam (`sessionTraceClient.ts`) routes append/drain to D1, so nothing
+ * imports this class for buffering anymore. The binding/export are still declared
+ * for the Workers build; this file can be removed once the DO binding is dropped
+ * from `wrangler.jsonc` + `worker.ts`.
+ *
+ * ## Why it originally existed
  *
  * paikko's backend capture buffers each request's {@link TraceRequest} keyed by
  * `sessionId`, then drains them at report time to build the `trace` artifact (the
