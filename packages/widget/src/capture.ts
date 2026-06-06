@@ -104,6 +104,26 @@ function now(): string {
   return new Date().toISOString();
 }
 
+/**
+ * True when `url` resolves to the same origin as the page. Relative URLs are
+ * same-origin by definition; absolute URLs are compared by origin. Used to gate
+ * header injection: the paikko trace/session headers are custom request headers,
+ * so adding them to a CROSS-origin request forces a CORS preflight that the
+ * third party's `Access-Control-Allow-Headers` will reject - breaking the
+ * consumer's cross-origin script/wasm/media loads. We therefore only inject on
+ * same-origin calls (the consumer's own backend, which `withCapture()` wraps).
+ * The cross-origin report POST sets the session header explicitly itself.
+ */
+function isSameOrigin(url: string): boolean {
+  if (typeof window === "undefined" || !window.location) return true;
+  try {
+    return new URL(url, window.location.href).origin === window.location.origin;
+  } catch {
+    // Unparseable - treat as same-origin (relative-ish); never block the request.
+    return true;
+  }
+}
+
 function genTraceId(): TraceId {
   // crypto.randomUUID is available in all modern browsers; fall back just in case.
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -287,13 +307,19 @@ export class Capture {
             ? input.toString()
             : input.url;
 
-      // Inject the trace header onto a merged Headers object.
-      const headers = new Headers(
-        init?.headers ?? (input instanceof Request ? input.headers : undefined),
-      );
-      headers.set(TRACE_HEADER, traceId);
-      headers.set(SESSION_HEADER, getSessionId());
-      const nextInit: RequestInit = { ...init, headers };
+      // Inject the trace/session headers ONLY on same-origin calls. Adding
+      // custom headers to a cross-origin fetch forces a CORS preflight the third
+      // party will reject, breaking the consumer's cross-origin loads; such a
+      // request is still recorded below, just with its headers untouched.
+      let callInit = init;
+      if (isSameOrigin(url)) {
+        const headers = new Headers(
+          init?.headers ?? (input instanceof Request ? input.headers : undefined),
+        );
+        headers.set(TRACE_HEADER, traceId);
+        headers.set(SESSION_HEADER, getSessionId());
+        callInit = { ...init, headers };
+      }
 
       const reqBody = await self.readRequestBody(input, init);
       const startedAt = now();
@@ -312,7 +338,7 @@ export class Capture {
       self.pushNetwork(entry);
 
       try {
-        const res = await original(input, nextInit);
+        const res = await original(input, callInit);
         entry.status = res.status;
         entry.durationMs = Math.round(performance.now() - startMs);
         // Clone so the app still consumes the body.
@@ -418,7 +444,9 @@ export class Capture {
       const meta = (this as unknown as Record<symbol, Meta>)[META];
       if (meta) {
         try {
-          if (!meta.headerInjected) {
+          // Same-origin only - see isSameOrigin: custom headers on a cross-origin
+          // XHR trip a CORS preflight the third party rejects.
+          if (!meta.headerInjected && isSameOrigin(meta.url)) {
             setHeaderOrig.call(this, TRACE_HEADER, meta.traceId);
             setHeaderOrig.call(this, SESSION_HEADER, getSessionId());
             meta.headerInjected = true;

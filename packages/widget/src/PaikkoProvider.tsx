@@ -33,6 +33,14 @@ export interface PaikkoProviderProps {
   getClientState?: () => Record<string, unknown>;
   /** Who is filing. Defaults to "anonymous" inside `<ReportButton>`. */
   reporter?: string;
+  /**
+   * Whether to mount the widget at all. paikko is a development/internal tool, so
+   * by DEFAULT it renders only when `NODE_ENV !== "production"` - the pills never
+   * ship to real end-users unless you opt in. Pass `true`/`false` to force it
+   * (e.g. `enabled={process.env.NEXT_PUBLIC_PAIKKO_ENABLED === "true"}` to drive
+   * it from a dev-only env file like `.env.development`).
+   */
+  enabled?: boolean;
 }
 
 export function PaikkoProvider({
@@ -41,7 +49,12 @@ export function PaikkoProvider({
   ticketsUrl,
   getClientState,
   reporter,
-}: PaikkoProviderProps): React.JSX.Element {
+  enabled,
+}: PaikkoProviderProps): React.JSX.Element | null {
+  const active =
+    enabled ?? process.env.NODE_ENV !== "production";
+  if (!active) return null;
+
   return (
     <>
       <ReportButton

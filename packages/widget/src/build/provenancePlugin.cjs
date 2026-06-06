@@ -38,20 +38,39 @@
  * Next.js config (next.config.js) - if using SWC and you only need this in
  * development, you can gate it; with the Babel route Next picks up .babelrc
  * automatically. The plugin is build-time only and emits no runtime code beyond
- * the static attributes, so it has zero production cost besides slightly larger
- * markup (strippable with a production `false` option below).
+ * the static attributes. By DEFAULT it no-ops in production builds (NODE_ENV ===
+ * "production"), so the `data-src` paths never leak into shipped HTML; pass an
+ * explicit `enabled` (see Options) to override.
  *
  * ## Options
  *
  *   rootDir   - base dir to relativize filenames against (default process.cwd()).
  *   attr      - override the src attribute name (default "data-src").
  *   componentAttr - override the component attribute (default "data-paikko-component").
- *   enabled   - set false to no-op (e.g. gate off in production).
+ *   enabled   - tri-state gate for emitting the attributes:
+ *                 true      -> always emit;
+ *                 false     -> never emit (no-op);
+ *                 undefined -> DEFAULT: emit only when NODE_ENV !== "production",
+ *                              so provenance never leaks source paths into a prod
+ *                              build unless you opt in explicitly. A JSON `.babelrc`
+ *                              cannot read env vars - use `.babelrc.js` to pass an
+ *                              explicit `enabled` if you need finer control.
  */
 
 "use strict";
 
 const path = require("path");
+
+/**
+ * Resolve the tri-state `enabled` option. Explicit booleans win; otherwise
+ * default to dev-only so a production build does not ship `data-src` source
+ * paths in its HTML.
+ */
+function isEnabled(opt) {
+  if (opt === true) return true;
+  if (opt === false) return false;
+  return process.env.NODE_ENV !== "production";
+}
 
 module.exports = function provenancePlugin(babel) {
   const { types: t } = babel;
@@ -129,7 +148,7 @@ module.exports = function provenancePlugin(babel) {
     visitor: {
       JSXOpeningElement(jsxPath, state) {
         const opts = state.opts || {};
-        if (opts.enabled === false) return;
+        if (!isEnabled(opts.enabled)) return;
 
         const rootDir = opts.rootDir
           ? path.resolve(opts.rootDir)
