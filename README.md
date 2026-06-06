@@ -1,6 +1,10 @@
 # paikko
 
-*Point at the bug. The agent fixes it.*
+*Walk the agent to the bug.*
+
+The plumber's already in your house. You don't recite directions to the leak - you
+walk them to it. paikko walks the agent to your bug: hit report and it lands on the
+exact spot - element, route, state, trace.
 
 A web framework for AI coding that flips the loop: instead of describing bugs to an
 agent from the outside, you **use the app like a user**, hit a report button the moment
