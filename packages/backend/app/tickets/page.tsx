@@ -15,11 +15,25 @@ import { listHeads } from "@/paikko/server/tickets/store";
 // Always reflect the live queue; tickets change as the agent works them.
 export const dynamic = "force-dynamic";
 
-export default async function TicketsPage() {
+/**
+ * Optionally narrow the queue to one tenant with `?projectKey=<key>`. Omitting
+ * it (the default) shows ALL tickets - the single-tenant dev behaviour, so
+ * nothing regresses. Next 15 hands `searchParams` to a server component as a
+ * Promise, hence the await.
+ */
+export default async function TicketsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectKey?: string | string[] }>;
+}) {
+  const { projectKey } = await searchParams;
+  const tenant = Array.isArray(projectKey) ? projectKey[0] : projectKey;
+
   let tickets: TicketHead[] = [];
   let error: string | null = null;
   try {
-    tickets = await listHeads();
+    // `tenant` undefined -> show all tickets (default); set -> filter to tenant.
+    tickets = await listHeads(undefined, tenant);
   } catch (err) {
     error = err instanceof Error ? err.message : "Failed to load tickets.";
   }

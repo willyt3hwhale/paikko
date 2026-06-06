@@ -1,16 +1,27 @@
 {
   "name": "@paikko/widget",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "paikko consumer report widget (PaikkoProvider, ReportButton, PaikkoNav, capture) + provenance plugin. Backend-agnostic: configurable endpoint, projectKey, ticketsUrl.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paikko/paikko.git",
+    "directory": "packages/widget"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
     "./build/provenancePlugin": "./src/build/provenancePlugin.cjs"
   },
   "files": [
-    "src"
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/build/provenancePlugin.cjs",
+    "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

@@ -375,13 +375,22 @@ export async function createTicketFromBundle(
  * List tier-1 heads, optionally filtered by status. This is the queue the agent
  * runner polls (e.g. status="open"). Returns refs/summaries only - never the
  * heavy artifact payloads. Newest first.
+ *
+ * `projectKey` is the multi-tenant (SaaS) seam: when provided, only tickets
+ * stamped with that exact projectKey are returned; when omitted/null/undefined,
+ * ALL tickets are returned regardless of projectKey (the single-tenant default -
+ * nothing regresses for callers that don't opt in).
  */
 export async function listHeads(
   status?: TicketStatus,
+  projectKey?: string | null,
 ): Promise<TicketHead[]> {
   const prisma = getPrisma();
+  const where: { status?: TicketStatus; projectKey?: string } = {};
+  if (status) where.status = status;
+  if (projectKey != null) where.projectKey = projectKey;
   const rows = await prisma.ticket.findMany({
-    where: status ? { status } : undefined,
+    where: Object.keys(where).length > 0 ? where : undefined,
     orderBy: { createdAt: "desc" },
     include: headInclude,
   });
@@ -408,11 +417,21 @@ const AGENT_AUTHOR = "agent";
  *
  * Oldest first, so the runner drains the queue in report order. Returns full
  * tier-1 heads (refs/summaries only, never artifact payloads).
+ *
+ * `projectKey` is the multi-tenant (SaaS) seam: when provided, only tickets
+ * stamped with that exact projectKey are considered; when omitted/null/undefined,
+ * ALL tenants' tickets are considered (the single-tenant default).
  */
-export async function listActionable(): Promise<TicketHead[]> {
+export async function listActionable(
+  projectKey?: string | null,
+): Promise<TicketHead[]> {
   const prisma = getPrisma();
+  const where: { status: { in: TicketStatus[] }; projectKey?: string } = {
+    status: { in: ["open", "reviewing"] },
+  };
+  if (projectKey != null) where.projectKey = projectKey;
   const rows = await prisma.ticket.findMany({
-    where: { status: { in: ["open", "reviewing"] } },
+    where,
     orderBy: { createdAt: "asc" },
     include: headInclude,
   });

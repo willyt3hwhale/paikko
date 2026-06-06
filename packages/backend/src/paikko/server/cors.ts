@@ -8,11 +8,20 @@
  * UI hits. This module centralises the (dev-permissive) CORS policy so every
  * route applies the same headers.
  *
- * Policy (dev): reflect the request's Origin (so credentials/headers work without
- * a wildcard), allow the methods the API uses, and allow the paikko capture
- * headers the widget sends (x-paikko-session, x-paikko-trace, x-paikko-project)
- * plus content-type. Tighten the allowed origin to a configured allowlist before
- * a real multi-tenant deployment.
+ * Policy: allow the methods the API uses, allow the paikko capture headers the
+ * widget sends (x-paikko-session, x-paikko-trace, x-paikko-project) plus
+ * content-type, and decide the allowed Origin from `PAIKKO_ALLOWED_ORIGINS`:
+ *
+ *   - UNSET or "*"  -> permissive: reflect ANY request Origin (or "*" when there
+ *                      is none). This is the zero-config dev default, so the
+ *                      calculator on http://localhost:3000 keeps working without
+ *                      touching the env.
+ *   - comma list    -> allowlist: reflect the request Origin only when it is in
+ *                      the list; otherwise emit no Allow-Origin header so the
+ *                      browser blocks the cross-origin response. Lock prod down
+ *                      here, e.g. `PAIKKO_ALLOWED_ORIGINS=https://app.example.com`.
+ *
+ * Origins are reflected (not a bare "*") so credentialed cross-origin calls work.
  */
 
 import { NextResponse } from "next/server";
@@ -29,25 +38,65 @@ const ALLOW_METHODS = "GET,POST,PATCH,OPTIONS";
 const ALLOW_HEADERS = "content-type, x-paikko-session, x-paikko-trace, x-paikko-project";
 
 /**
- * Reflect the caller's Origin so credentialed/cross-origin requests work without a
- * bare `*` (which forbids credentials). Falls back to `*` when there is no Origin
- * header (e.g. same-origin or a non-browser client).
+ * Env var holding the CORS allowlist: a comma-separated list of exact origins
+ * (e.g. "https://app.example.com,https://admin.example.com"). UNSET or "*" means
+ * permissive (reflect any origin) - the zero-config dev default. Documented in
+ * `.env.example`.
  */
-function allowOrigin(origin: string | null): string {
-  return origin && origin.length > 0 ? origin : "*";
+const ALLOWED_ORIGINS_ENV = "PAIKKO_ALLOWED_ORIGINS";
+
+/**
+ * Parse the configured allowlist. Returns:
+ *   - `null` -> permissive mode (env unset/empty or contains a bare "*").
+ *   - a Set of exact origins -> allowlist mode.
+ *
+ * Read from `process.env` on each call so a config change is picked up on the
+ * next request (Workers/next dev re-evaluate env per invocation; no caching that
+ * could pin a stale allowlist).
+ */
+function parseAllowlist(): Set<string> | null {
+  const raw = process.env[ALLOWED_ORIGINS_ENV];
+  if (!raw || raw.trim().length === 0) return null; // unset -> permissive
+  const entries = raw
+    .split(",")
+    .map((o) => o.trim())
+    .filter((o) => o.length > 0);
+  if (entries.length === 0 || entries.includes("*")) return null; // "*" -> permissive
+  return new Set(entries);
 }
 
 /**
- * Apply the CORS response headers to a response, reflecting the request's Origin.
- * Returns the same response for chaining. Call this on every response a
- * cross-origin route returns so the browser accepts it.
+ * Resolve the `Access-Control-Allow-Origin` value for a request, or `null` when
+ * the origin is not allowed (so the caller emits no Allow-Origin header and the
+ * browser blocks the response).
+ *
+ *   - permissive (allowlist null): reflect the Origin, or "*" when absent.
+ *   - allowlist: reflect the Origin only if it is listed; else `null`.
+ */
+function allowOrigin(origin: string | null): string | null {
+  const allowlist = parseAllowlist();
+  if (allowlist === null) {
+    return origin && origin.length > 0 ? origin : "*";
+  }
+  return origin && allowlist.has(origin) ? origin : null;
+}
+
+/**
+ * Apply the CORS response headers to a response, reflecting the request's Origin
+ * when it is permitted by the `PAIKKO_ALLOWED_ORIGINS` policy. Returns the same
+ * response for chaining. Call this on every response a cross-origin route returns
+ * so the browser accepts it. A disallowed origin simply gets no Allow-Origin
+ * header (the browser then blocks the cross-origin read).
  */
 export function withCors<R extends Response>(response: R, origin: string | null): R {
-  response.headers.set("Access-Control-Allow-Origin", allowOrigin(origin));
+  const allowed = allowOrigin(origin);
+  if (allowed !== null) {
+    response.headers.set("Access-Control-Allow-Origin", allowed);
+  }
   response.headers.set("Access-Control-Allow-Methods", ALLOW_METHODS);
   response.headers.set("Access-Control-Allow-Headers", ALLOW_HEADERS);
   response.headers.set("Access-Control-Max-Age", "86400");
-  // Caches must vary on Origin since we reflect it.
+  // Caches must vary on Origin since the allowed value depends on it.
   response.headers.set("Vary", "Origin");
   return response;
 }

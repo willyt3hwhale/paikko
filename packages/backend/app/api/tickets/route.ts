@@ -7,6 +7,10 @@
  *
  * Filter by status with `?status=open` (the common runner poll). An unknown
  * status value is a 400. Wrapped in the mandated `withCapture` seam (#2).
+ *
+ * Filter by tenant with `?projectKey=<key>` (the multi-tenant SaaS seam): only
+ * tickets stamped with that projectKey are returned. Omitting the param returns
+ * ALL tenants' tickets (the single-tenant default - back-compatible).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -24,7 +28,9 @@ export const GET = withCapture(
       const status = statusParam
         ? TicketStatusSchema.parse(statusParam)
         : undefined;
-      const heads = await listHeads(status);
+      // Optional multi-tenant filter; absent -> all tenants (single-tenant default).
+      const projectKey = req.nextUrl.searchParams.get("projectKey") ?? undefined;
+      const heads = await listHeads(status, projectKey);
       return withCors(NextResponse.json(heads), origin);
     } catch (err) {
       return withCors(errorToResponse(err), origin);
