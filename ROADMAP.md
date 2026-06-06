@@ -37,6 +37,18 @@ dead code (kept so the Workers build doesn't break) - a cleanup pass should remo
 - ☐ Auth / billing - when launching the hosted SaaS.
 - ☐ A real DELETE/admin route (cleanup is currently raw D1).
 
-## 5. The "looks wrong" report class  ☐
-Half of real reports are visual taste, not logic. Provenance helps; a screenshot /
-visual-diff artifact would help more. Future.
+## 5. The "looks wrong" report class  ☑
+Added a **screenshot artifact**: the widget captures the page via `html2canvas` (lazy
+dynamic import, longest side capped to 1280px, JPEG q0.7, ~26KB for the calc), excluding
+the paikko UI (`ignoreElements [data-paikko-ui]`) so the shot is what the user saw. Stored
+as the `screenshot` artifact; the review UI renders it as an `<img>`. Now the agent (which
+sees images) and the human reviewer can directly see visual/taste reports. Best-effort -
+a capture failure never blocks the report. (Inline base64 in D1/the bundle is fine at this
+size; very large pages could want blob storage with a ref - future.)
+
+## Tidy-up (known follow-ups, non-blocking)
+- ☐ Remove the now-dead SessionTrace **Durable Object** fully (binding in wrangler.jsonc,
+  worker.ts export, db.ts type aug) and rename the misnamed `*SessionDO` helpers (they hit D1).
+- ☑ `@paikko/contract` builds `dist` on install (`prepare`) so fresh clones resolve it.
+- ☐ Bake a committed default backend port (currently 8787 in code, 8788 via env locally).
+- ☐ A real DELETE/admin API route (test cleanup is raw D1 today).
