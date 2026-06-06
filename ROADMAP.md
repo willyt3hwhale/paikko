@@ -23,12 +23,15 @@ The DO-backed "frontend symptom → backend cause" spine is degraded locally (Du
 Objects don't run under `next dev`). Decide: accept prod-only, or build a local trace
 path. Medium value.
 
-## 4. Prod / SaaS hardening  ☐
-- `projectKey` server-side filtering (multi-tenant; the field is persisted but unfiltered).
-- CORS allowlist (currently dev-permissive, reflects any origin).
-- Publish the packages; bake a configurable backend port default (currently 8787 default,
-  overridden to 8788 via `NEXT_PUBLIC_PAIKKO_*` env to dodge a port clash).
-- Auth / billing when launching the hosted SaaS.
+## 4. Prod / SaaS hardening  ◐
+- ☑ `projectKey` server-side filtering - `GET /api/tickets?projectKey=X` returns one tenant;
+  no param = all (back-compat). Store `listHeads`/`listActionable` take an optional key.
+- ☑ Configurable CORS allowlist - `PAIKKO_ALLOWED_ORIGINS` (comma-sep); unset/`*` = permissive
+  (dev default keeps localhost working), set = reflect only listed origins.
+- ☑ Publish-ready `@paikko/contract` + `@paikko/widget` (version/license/files/exports/
+  publishConfig, react peerDep) + config docs (READMEs, `.env.example`).
+- ☐ Auth / billing - when launching the hosted SaaS.
+- ☐ A real DELETE/admin route (cleanup is currently raw D1).
 
 ## 5. The "looks wrong" report class  ☐
 Half of real reports are visual taste, not logic. Provenance helps; a screenshot /
