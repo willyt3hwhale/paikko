@@ -16,30 +16,21 @@ or reject, all from inside the running app.
 
 ## See it
 
-<table>
-  <tr>
-    <td width="50%">
-      <img src="docs/screenshots/02-point.png" alt="Point mode: click the element that's wrong" /><br />
-      <sub><b>1 · Point.</b> Hit <b>Report</b>, then click whatever's wrong.</sub>
-    </td>
-    <td width="50%">
-      <img src="docs/screenshots/03-form.png" alt="Report form with the captured element" /><br />
-      <sub><b>2 · Describe.</b> One line. paikko already grabbed the element (down to <code>file:line</code>), your state, console, network, and a screenshot.</sub>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <img src="docs/screenshots/05-tickets.png" alt="Ticket queue grouped by status" /><br />
-      <sub><b>3 · Queue.</b> Reports land grouped by what needs you; the agent works them one at a time.</sub>
-    </td>
-    <td width="50%">
-      <img src="docs/screenshots/06-detail.png" alt="Ticket detail: source, artifacts, proposed fix" /><br />
-      <sub><b>4 · Review.</b> Exact source (<code>app/calc/Key.tsx:39:5</code>), every artifact, and the agent's fix on its own branch - accept &amp; merge or reject.</sub>
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/screenshots/flow.webp" alt="paikko flow: point at a bug, describe it, it queues, the agent fixes it" width="760" />
+</p>
 
-<sub>Shots from the bundled <code>examples/calculator</code> demo.</sub>
+<p align="center"><sub><b>Point</b> at whatever's wrong → <b>describe</b> it in a line → it <b>queues</b>, grouped by what needs you → <b>review</b> the agent's fix (exact source + every artifact), accept or reject. From the bundled <code>examples/calculator</code> demo.</sub></p>
+
+<details>
+<summary>Stills</summary>
+
+| | |
+|---|---|
+| ![Point](docs/screenshots/02-point.png) | ![Describe](docs/screenshots/03-form.png) |
+| ![Queue](docs/screenshots/05-tickets.png) | ![Review](docs/screenshots/06-detail.png) |
+
+</details>
 
 ## Thesis
 
