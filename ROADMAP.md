@@ -46,9 +46,13 @@ sees images) and the human reviewer can directly see visual/taste reports. Best-
 a capture failure never blocks the report. (Inline base64 in D1/the bundle is fine at this
 size; very large pages could want blob storage with a ref - future.)
 
-## Tidy-up (known follow-ups, non-blocking)
-- ☐ Remove the now-dead SessionTrace **Durable Object** fully (binding in wrangler.jsonc,
-  worker.ts export, db.ts type aug) and rename the misnamed `*SessionDO` helpers (they hit D1).
+## Tidy-up (known follow-ups)
+- ☑ Removed the dead SessionTrace **Durable Object** (sessionTraceDO/Client deleted, binding
+  out of wrangler.jsonc/worker.ts/db.ts; opennext build verified clean; trace via D1 intact).
 - ☑ `@paikko/contract` builds `dist` on install (`prepare`) so fresh clones resolve it.
-- ☐ Bake a committed default backend port (currently 8787 in code, 8788 via env locally).
-- ☐ A real DELETE/admin API route (test cleanup is raw D1 today).
+- ☑ Baked committed **:8788 defaults** - both apps run with zero `NEXT_PUBLIC_*` env vars
+  (backend `dev` = `next dev -p 8788`; calc PaikkoMount defaults to :8788, env still overrides).
+- ☑ Real **`DELETE /api/tickets/:id`** route (204 → 404; deletes ticket + threads + artifacts);
+  `DELETE` added to CORS allowed-methods.
+- ☐ Minor: a few stale DO mentions remain in docstrings only (`sessionTrace.ts`,
+  `sessionTraceD1.ts`) - cosmetic, no code impact.
