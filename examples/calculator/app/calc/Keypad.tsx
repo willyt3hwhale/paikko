@@ -18,7 +18,7 @@ export function Keypad() {
 
   return (
     <div className="calc-keypad grid grid-cols-4 gap-3">
-      <Key label="clear" variant="function" onPress={clear}>
+      <Key label="clear" variant="danger" onPress={clear}>
         AC
       </Key>
       <Key label="negate" variant="function" onPress={toggleSign}>

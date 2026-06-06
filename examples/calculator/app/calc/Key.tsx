@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-type KeyVariant = "digit" | "operator" | "function" | "equals";
+type KeyVariant = "digit" | "operator" | "function" | "equals" | "danger";
 
 // Flat, square, high-contrast keys - deliberately not the iOS rounded-pill /
 // orange look. Digits are slate, functions are a muted steel, operators/equals
@@ -12,6 +12,8 @@ const VARIANT_CLASS: Record<KeyVariant, string> = {
   operator: "bg-teal-700 text-teal-50 hover:bg-teal-600",
   function: "bg-slate-800 text-slate-300 hover:bg-slate-700",
   equals: "bg-teal-500 text-slate-950 hover:bg-teal-400",
+  // The reset/clear key: red so it obviously stands out as the destructive reset.
+  danger: "bg-red-600 text-red-50 hover:bg-red-500",
 };
 
 /**
