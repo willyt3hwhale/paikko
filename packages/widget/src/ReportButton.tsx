@@ -170,7 +170,7 @@ export function ReportButton({
         target: resolvedTarget,
       };
 
-      const artifacts = snapshotArtifacts(capture, resolvedTarget.selector);
+      const artifacts = await snapshotArtifacts(capture, resolvedTarget.selector);
 
       const bundle: ReportBundle = { reporter, projectKey, report, artifacts };
 

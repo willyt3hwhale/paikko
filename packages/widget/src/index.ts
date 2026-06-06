@@ -24,6 +24,7 @@ export {
   buildSelector,
   snapshotStorage,
   snapshotDom,
+  snapshotScreenshot,
   snapshotArtifacts,
   getSessionId,
   TRACE_HEADER,

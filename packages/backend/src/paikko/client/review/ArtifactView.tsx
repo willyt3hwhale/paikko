@@ -16,6 +16,7 @@ import type {
   StorageArtifact,
   DomArtifact,
   TraceArtifact,
+  ScreenshotArtifact,
 } from "@paikko/contract";
 import { Code, absoluteTime } from "./ui";
 
@@ -234,6 +235,25 @@ function TraceView({ payload }: { payload: TraceArtifact }) {
   );
 }
 
+/* ---- screenshot ---- */
+
+function ScreenshotView({ payload }: { payload: ScreenshotArtifact }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-xs text-neutral-500">
+        {payload.width}×{payload.height} · {payload.format}
+      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element -- data: URL, no remote loader */}
+      <img
+        src={payload.dataUrl}
+        alt="Page screenshot at report time"
+        className="max-w-full rounded border border-neutral-200"
+        style={{ maxWidth: "100%", height: "auto" }}
+      />
+    </div>
+  );
+}
+
 /* ---- helpers + dispatch ---- */
 
 function Empty({ children }: { children: React.ReactNode }) {
@@ -280,6 +300,8 @@ export function ArtifactView<N extends ArtifactName>({
       return <DomView payload={payload as DomArtifact} />;
     case "trace":
       return <TraceView payload={payload as TraceArtifact} />;
+    case "screenshot":
+      return <ScreenshotView payload={payload as ScreenshotArtifact} />;
     default:
       return <Json value={payload} />;
   }

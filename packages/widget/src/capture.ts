@@ -25,6 +25,7 @@ import {
   type ClientStateArtifact,
   type StorageArtifact,
   type DomArtifact,
+  type ScreenshotArtifact,
   type ReportTarget,
   type TraceId,
   ArtifactPayloadSchemas,
@@ -580,6 +581,79 @@ export function snapshotDom(targetSelector: string | null): DomArtifact {
   };
 }
 
+/**
+ * Longest side (px) the captured screenshot is downscaled to. Keeps the
+ * base64 payload small - a JPEG at this cap lands well under ~1MB.
+ */
+const SCREENSHOT_MAX_SIDE = 1280;
+
+/** JPEG quality for the exported screenshot (0..1). Lower = smaller payload. */
+const SCREENSHOT_JPEG_QUALITY = 0.7;
+
+/**
+ * Render the page to an image at report time, so the agent (which can see images)
+ * and the human reviewer can directly judge visual / "looks wrong" reports that a
+ * DOM/CSS snapshot can't convey.
+ *
+ * Best-effort and non-blocking: html2canvas is loaded ONLY here, via a lazy
+ * dynamic import, so it never sits on the page-load critical path - it is fetched
+ * the first time a report is actually filed. Any failure (import failed, canvas
+ * tainted, unsupported context) returns `null` and the screenshot artifact is
+ * simply omitted; it must never break report submission.
+ *
+ * The widget's own UI (FAB / report form / nav) carries `data-paikko-ui`; we pass
+ * html2canvas's `ignoreElements` so none of it appears in the shot - the reviewer
+ * sees the page as the user saw it, not the open form.
+ *
+ * Size control: the longest side is capped to {@link SCREENSHOT_MAX_SIDE} via the
+ * `scale` option and the image is exported as JPEG at
+ * {@link SCREENSHOT_JPEG_QUALITY}.
+ */
+export async function snapshotScreenshot(): Promise<ScreenshotArtifact | null> {
+  if (typeof document === "undefined" || typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const target = document.body ?? document.documentElement;
+    if (!target) return null;
+
+    const mod = await import("html2canvas");
+    const html2canvas = (mod.default ?? mod) as typeof import("html2canvas").default;
+
+    // Downscale: cap the longest side. html2canvas renders at CSS px * scale, so
+    // a scale < 1 shrinks the output. Never upscale (cap scale at the device-ish
+    // baseline of 1) so small pages aren't blown up.
+    const longestSide = Math.max(
+      target.scrollWidth || window.innerWidth,
+      target.scrollHeight || window.innerHeight,
+      1,
+    );
+    const scale = Math.min(1, SCREENSHOT_MAX_SIDE / longestSide);
+
+    const canvas = await html2canvas(target, {
+      scale,
+      logging: false,
+      useCORS: true,
+      // Exclude the paikko widget UI (FAB / form / nav) from the shot.
+      ignoreElements: (el: Element) =>
+        el instanceof Element && el.closest("[data-paikko-ui]") !== null,
+    });
+
+    const dataUrl = canvas.toDataURL("image/jpeg", SCREENSHOT_JPEG_QUALITY);
+    if (!dataUrl || !dataUrl.startsWith("data:image/")) return null;
+
+    return {
+      dataUrl,
+      width: canvas.width,
+      height: canvas.height,
+      format: "jpeg",
+    };
+  } catch {
+    // Best-effort: a failed screenshot must never block a report.
+    return null;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Element resolution (point mode)                                    */
 /* ------------------------------------------------------------------ */
@@ -668,6 +742,7 @@ export interface CapturedArtifacts {
   clientState?: ClientStateArtifact;
   storage?: StorageArtifact;
   dom?: DomArtifact;
+  screenshot?: ScreenshotArtifact;
 }
 
 /**
@@ -676,11 +751,16 @@ export interface CapturedArtifacts {
  * snapshots are taken, and each payload is parsed through its contract schema so
  * only valid data leaves the client. Note `trace` is intentionally absent - the
  * backend trace artifact is produced server-side from the propagated traceIds.
+ *
+ * Async because the `screenshot` artifact is rendered lazily (html2canvas is
+ * dynamically imported only here, at report time) and is best-effort: if it fails
+ * or html2canvas isn't available, the screenshot is simply omitted and the rest of
+ * the snapshot is returned unchanged - a failed screenshot never breaks a report.
  */
-export function snapshotArtifacts(
+export async function snapshotArtifacts(
   capture: Capture,
   targetSelector: string | null,
-): CapturedArtifacts {
+): Promise<CapturedArtifacts> {
   const out: CapturedArtifacts = {};
 
   const console_ = ArtifactPayloadSchemas.console.safeParse(capture.snapshotConsole());
@@ -701,6 +781,18 @@ export function snapshotArtifacts(
 
   const dom = ArtifactPayloadSchemas.dom.safeParse(snapshotDom(targetSelector));
   if (dom.success && dom.data.html) out.dom = dom.data;
+
+  // Best-effort screenshot: lazily rendered, validated against the contract, and
+  // omitted on any failure so it can never block report submission.
+  try {
+    const shot = await snapshotScreenshot();
+    if (shot) {
+      const screenshot = ArtifactPayloadSchemas.screenshot.safeParse(shot);
+      if (screenshot.success) out.screenshot = screenshot.data;
+    }
+  } catch {
+    /* never let the screenshot break the snapshot */
+  }
 
   return out;
 }

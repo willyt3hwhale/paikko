@@ -77,6 +77,7 @@ export const ArtifactNameSchema = z.enum([
   "storage",
   "dom",
   "trace",
+  "screenshot",
 ]);
 export type ArtifactName = z.infer<typeof ArtifactNameSchema>;
 
@@ -347,6 +348,30 @@ export const TraceArtifactSchema = z.object({
 });
 export type TraceArtifact = z.infer<typeof TraceArtifactSchema>;
 
+/* ---- screenshot ---- */
+
+/**
+ * Payload for the `screenshot` artifact: an actual rendered image of the page at
+ * report time, so the agent (which can see images) and the human reviewer can
+ * directly judge "this looks off" / visual reports that a DOM/CSS snapshot can't
+ * convey. The widget's own report UI is excluded from the shot.
+ *
+ * Kept small on purpose: the longest side is capped (~1280px) and the image is
+ * JPEG-compressed, so the base64 `dataUrl` typically lands well under ~1MB. `png`
+ * is allowed as a fallback but is larger; prefer `jpeg`.
+ */
+export const ScreenshotArtifactSchema = z.object({
+  /** A `data:` URL holding the base64-encoded image (e.g. `data:image/jpeg;base64,...`). */
+  dataUrl: z.string(),
+  /** Pixel width of the rendered image. */
+  width: z.number().int(),
+  /** Pixel height of the rendered image. */
+  height: z.number().int(),
+  /** Encoding of the image embedded in `dataUrl`. */
+  format: z.enum(["jpeg", "png"]),
+});
+export type ScreenshotArtifact = z.infer<typeof ScreenshotArtifactSchema>;
+
 /* ------------------------------------------------------------------ */
 /* Payload routing                                                    */
 /* ------------------------------------------------------------------ */
@@ -364,6 +389,7 @@ export const ArtifactPayloadSchemas = {
   storage: StorageArtifactSchema,
   dom: DomArtifactSchema,
   trace: TraceArtifactSchema,
+  screenshot: ScreenshotArtifactSchema,
 } as const;
 
 /** Type-level map from artifact name to its decoded payload type. */
@@ -374,6 +400,7 @@ export interface ArtifactPayloadMap {
   storage: StorageArtifact;
   dom: DomArtifact;
   trace: TraceArtifact;
+  screenshot: ScreenshotArtifact;
 }
 
 /** Union of all artifact payloads (the body served behind any ref). */
@@ -406,6 +433,7 @@ export const ReportBundleSchema = z.object({
       storage: StorageArtifactSchema.optional(),
       dom: DomArtifactSchema.optional(),
       trace: TraceArtifactSchema.optional(),
+      screenshot: ScreenshotArtifactSchema.optional(),
     })
     .partial(),
 });

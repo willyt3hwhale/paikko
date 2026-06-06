@@ -25,6 +25,7 @@ const ARTIFACT_LABEL: Record<ArtifactName, string> = {
   storage: "Storage",
   dom: "DOM snapshot",
   trace: "Backend trace",
+  screenshot: "Screenshot",
 };
 
 type LoadState<N extends ArtifactName> =

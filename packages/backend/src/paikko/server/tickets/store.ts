@@ -304,6 +304,12 @@ function summarize(name: ArtifactName, payload: unknown): string {
       const threw = t.requests.filter((r) => r.threw !== null).length;
       return `${t.requests.length} backend request(s), ${queries} quer(ies), ${threw} threw`;
     }
+    case "screenshot": {
+      const s = payload as ArtifactPayloadMap["screenshot"];
+      // dataUrl is base64; ~3/4 of its char length is the decoded image byte size.
+      const approxBytes = Math.round((s.dataUrl.length * 3) / 4);
+      return `screenshot ${s.width}x${s.height} ${s.format} ~${Math.round(approxBytes / 1024)}KB`;
+    }
   }
 }
 
