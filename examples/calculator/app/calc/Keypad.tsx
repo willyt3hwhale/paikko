@@ -76,9 +76,7 @@ export function Keypad() {
       <Key label="decimal" onPress={inputDecimal}>
         .
       </Key>
-      {/* Ticket cmq1fxfip000ukv3vu3uyhp3c: the equals key was hard to find.
-          Span it across two columns so it's clearly the largest, most
-          prominent key in the keypad. */}
+      {/* Equals spans two columns so it's the largest, most prominent key. */}
       <Key label="equals" variant="equals" wide onPress={equals}>
         =
       </Key>

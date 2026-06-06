@@ -16,7 +16,7 @@ Current AI coding (Lovable, v0, Claude Code, etc.) is outside-in: you see a prob
 the running app, switch to a chat, describe it from memory, the agent guesses. Context
 is lost at the point of pain.
 
-vibend captures context **at the point of pain**. The report button fires from inside
+paikko captures context **at the point of pain**. The report button fires from inside
 the app and bundles exact repro state - route, the DOM element you clicked, console,
 network, client state, and a backend trace. The agent gets ground truth, not prose.
 
@@ -74,23 +74,20 @@ pieces map to Cloudflare primitives:
   the `@prisma/adapter-d1` driver adapter; the D1 binding (`DB`) comes from the
   per-request Cloudflare context, not a connection string - so `@/lib/db` exposes
   `getPrisma()` (request-scoped) instead of a module singleton.
-- **Backend trace buffer -> Durable Object** (`SessionTrace`). Workers isolates are
+- **Backend trace buffer -> D1** (`TraceEntry` table). Workers isolates are
   ephemeral and the report POST may land in a different isolate than the one that
-  captured, so the trace can't sit in process memory. One DO per capture session
-  (`idFromName(sessionId)`) buffers `TraceRequest`s; the report route drains it.
+  captured, so the trace can't sit in process memory. `withCapture` appends each
+  traced request to `TraceEntry` keyed by session; the report route drains the
+  session's rows into the `trace` artifact. (D1 works under `next dev` too, where
+  Durable Objects don't - so trace is the same path in dev and prod.)
 - **The Next app -> the Worker** itself, built by OpenNext.
 
 ### Bindings (wrangler.jsonc)
 
-| Binding         | Type            | Purpose                          |
-|-----------------|-----------------|----------------------------------|
-| `DB`            | D1 database     | ticket store (Prisma)            |
-| `SESSION_TRACE` | Durable Object  | per-session backend-trace buffer |
-| `ASSETS`        | Assets          | static assets (OpenNext)         |
-
-The DO class `SessionTrace` is exported from `worker.ts` (the custom Worker entry
-that also re-exports OpenNext's generated handler); a DO binding is only valid if
-its class is exported from the Worker entry.
+| Binding  | Type        | Purpose                      |
+|----------|-------------|------------------------------|
+| `DB`     | D1 database | ticket store + trace (Prisma)|
+| `ASSETS` | Assets      | static assets (OpenNext)     |
 
 ### One-time setup (on your Cloudflare account)
 
@@ -117,24 +114,20 @@ with `npm run d1:migrate:diff --output migrations/<file>.sql` (uses
 ### Build / preview / deploy
 
 ```bash
-npm run preview   # opennextjs-cloudflare build + local wrangler preview (real D1/DO locally)
+npm run preview   # opennextjs-cloudflare build + local wrangler preview (real D1 locally)
 npm run deploy    # build + deploy to your Workers account
 ```
 
-The first deploy registers the `SessionTrace` Durable Object migration (tag `v1`,
-`new_sqlite_classes`) automatically from wrangler.jsonc.
-
 ### Local dev story
 
-- `npm run dev` (plain `next dev`) still works for fast iteration. `next.config.js`
+- `npm run dev` (plain `next dev`) works for fast iteration. `next.config.js`
   calls `initOpenNextCloudflareForDev()`, which boots wrangler's local platform
-  proxy so `getCloudflareContext()` resolves the `DB` and `SESSION_TRACE` bindings
-  against local D1/DO state. Run the `--local` migration first so the local D1 has
-  the tables. Note: per OpenNext's known issues, app-defined Durable Objects can be
-  flaky under `next dev`; if `SESSION_TRACE` misbehaves locally, use `npm run preview`
-  (full `wrangler dev`) which runs DOs faithfully.
+  proxy so `getCloudflareContext()` resolves the `DB` binding against local D1
+  state. Run the `--local` migration first so the local D1 has the tables. The
+  whole report/trace path runs here (trace is D1, not a Durable Object), so most
+  iteration needs nothing heavier.
 - `npm run preview` runs the real OpenNext build under `wrangler dev` - the
-  highest-fidelity local environment (real D1, real DOs), closest to production.
+  highest-fidelity local environment (real D1), closest to production.
 
 ### Caveats / known constraints
 
