@@ -626,4 +626,32 @@ export async function patchTicket(
   return getHead(id);
 }
 
+/**
+ * Hard-delete a ticket and its children. Removes the ticket's `ThreadMessage` and
+ * `Artifact` rows, then the ticket itself. `TraceEntry` rows are session-keyed
+ * (not ticket-keyed), so they are intentionally left untouched.
+ *
+ * The schema declares `onDelete: Cascade` on both child relations, but D1/SQLite
+ * only honours that when foreign-key enforcement is on (which the adapter does not
+ * guarantee), so we delete the children explicitly first and don't rely on the
+ * cascade. Throws {@link TicketNotFoundError} if the id is unknown (consistent
+ * with {@link getHead}).
+ *
+ * Like the other mutations here, this is not wrapped in an interactive transaction
+ * (D1 doesn't support them - see {@link setStatus}); v0's single serial runner
+ * does not race a delete against a concurrent writer.
+ */
+export async function deleteTicket(id: string): Promise<void> {
+  const prisma = getPrisma();
+  const ticket = await prisma.ticket.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!ticket) throw new TicketNotFoundError(id);
+
+  await prisma.threadMessage.deleteMany({ where: { ticketId: id } });
+  await prisma.artifact.deleteMany({ where: { ticketId: id } });
+  await prisma.ticket.delete({ where: { id } });
+}
+
 export type { ArtifactPayload };

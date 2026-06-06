@@ -28,7 +28,7 @@ import { NextResponse } from "next/server";
 import type { CapturableRequest } from "./withCapture";
 
 /** Methods the API surface exposes across the routes. */
-const ALLOW_METHODS = "GET,POST,PATCH,OPTIONS";
+const ALLOW_METHODS = "GET,POST,PATCH,DELETE,OPTIONS";
 
 /**
  * Request headers a cross-origin caller may send. Lower-cased; the browser

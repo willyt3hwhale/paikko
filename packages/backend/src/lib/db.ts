@@ -29,14 +29,12 @@ import {
 /**
  * The Cloudflare bindings this app expects. `CloudflareEnv` is the global
  * interface OpenNext exposes; we augment it with paikko's own bindings:
- *   - `DB`            - the D1 database (the ticket store).
- *   - `SESSION_TRACE` - the SessionTrace Durable Object namespace (trace buffer).
+ *   - `DB` - the D1 database (the ticket store, and the backend-trace buffer).
  * Names here MUST match the bindings declared in wrangler.jsonc.
  */
 declare global {
   interface CloudflareEnv {
     DB: D1Database;
-    SESSION_TRACE: DurableObjectNamespace;
   }
 }
 

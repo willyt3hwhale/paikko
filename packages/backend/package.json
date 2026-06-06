@@ -4,7 +4,7 @@
   "private": true,
   "description": "paikko backend: Next 15 + OpenNext/Cloudflare Workers - API routes, /tickets review UI, server seams, trace DO, prisma/D1.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 8788",
     "build": "next build",
     "start": "next start",
     "lint:seams": "node scripts/seam-guard.mjs",

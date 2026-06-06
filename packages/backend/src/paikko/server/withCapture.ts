@@ -38,7 +38,7 @@
  */
 
 import { finish, setStatus, setThrew, startTrace } from "./sessionTrace";
-import { appendToSessionDO, drainSessionDO } from "./sessionTraceClient";
+import { appendTraceEntry, drainTraceEntries } from "./sessionTraceD1";
 
 /** Header carrying the frontend-generated spine id for this request. */
 export const TRACE_HEADER = "x-paikko-trace";
@@ -104,20 +104,20 @@ export function withCapture<
           const response = await handler(request, context);
           setStatus(readStatus(response));
           // finish() freezes the request; we then write it to the session's
-          // Durable Object so the report drain (possibly a different isolate)
+          // D1 trace buffer so the report drain (possibly a different isolate)
           // can find it. Append is best-effort and never throws.
           const finished = finish();
-          if (finished) await appendToSessionDO(sessionId, finished);
+          if (finished) await appendTraceEntry(sessionId, finished);
           echoHeaders(response, traceId, sessionId);
           return response;
         } catch (err) {
-          // Capture the throw, emit the (failed) trace to the session DO, then
-          // re-throw so Next's error handling and the route's own semantics are
-          // preserved.
+          // Capture the throw, emit the (failed) trace to the session's D1
+          // buffer, then re-throw so Next's error handling and the route's own
+          // semantics are preserved.
           setThrew(err);
           setStatus(errorStatus(err));
           const finished = finish();
-          if (finished) await appendToSessionDO(sessionId, finished);
+          if (finished) await appendTraceEntry(sessionId, finished);
           throw err;
         }
       },
@@ -127,15 +127,15 @@ export function withCapture<
 
 /**
  * Assemble the `trace` artifact for a finished capture session by draining its
- * Durable Object buffer. The report bundle builder calls this when a user files a
+ * D1 trace buffer. The report bundle builder calls this when a user files a
  * report, to attach the backend side of the interaction. Returns null if nothing
- * was captured for the session. Async now: the buffer lives in the SessionTrace
- * DO (cross-isolate), so draining it is a DO fetch.
+ * was captured for the session. Async: the buffer lives in a D1 table
+ * (cross-isolate), so draining it is a DB read+delete.
  */
 export async function buildTraceArtifact(
   sessionId: string,
 ): Promise<import("@paikko/contract").TraceArtifact | null> {
-  return drainSessionDO(sessionId);
+  return drainTraceEntries(sessionId);
 }
 
 /* ------------------------------------------------------------------ */

@@ -21,9 +21,9 @@ import { PaikkoProvider } from "@paikko/widget";
 import { getState } from "@/lib/store";
 
 const ENDPOINT =
-  process.env.NEXT_PUBLIC_PAIKKO_ENDPOINT ?? "http://localhost:8787/api/reports";
+  process.env.NEXT_PUBLIC_PAIKKO_ENDPOINT ?? "http://localhost:8788/api/reports";
 const TICKETS_URL =
-  process.env.NEXT_PUBLIC_PAIKKO_TICKETS_URL ?? "http://localhost:8787/tickets";
+  process.env.NEXT_PUBLIC_PAIKKO_TICKETS_URL ?? "http://localhost:8788/tickets";
 const PROJECT_KEY = process.env.NEXT_PUBLIC_PAIKKO_PROJECT_KEY ?? "calculator-demo";
 
 export function PaikkoMount() {

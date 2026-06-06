@@ -4,10 +4,9 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "paikko",
 
-  // Custom Worker entry: re-exports OpenNext's generated handler AND the
-  // SessionTrace Durable Object class (a DO binding requires its class to be
-  // exported from the Worker entry). See worker.ts. The generated handler lives
-  // at .open-next/worker.js after `opennextjs-cloudflare build`.
+  // Custom Worker entry: re-exports OpenNext's generated handler as the default
+  // export. See worker.ts. The generated handler lives at .open-next/worker.js
+  // after `opennextjs-cloudflare build`.
   "main": "worker.ts",
 
   // nodejs_compat is REQUIRED by OpenNext (it pulls in node: builtins, including
@@ -44,26 +43,6 @@
       "database_name": "paikko",
       "database_id": "REPLACE_WITH_D1_DATABASE_ID",
       "migrations_dir": "migrations"
-    }
-  ],
-
-  // The backend-trace buffer. One DO instance per capture session
-  // (idFromName(sessionId)); the class is exported from worker.ts.
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "SESSION_TRACE",
-        "class_name": "SessionTrace"
-      }
-    ]
-  },
-
-  // SessionTrace uses SQLite-backed DO storage (the only option for DOs created
-  // on the Workers Free plan, and the current default for new classes).
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": ["SessionTrace"]
     }
   ]
 }
