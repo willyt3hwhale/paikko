@@ -14,6 +14,33 @@ queue the agent works through.
 The agent doesn't live in the app. The **feedback loop** does: report, review, accept
 or reject, all from inside the running app.
 
+## See it
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/02-point.png" alt="Point mode: click the element that's wrong" /><br />
+      <sub><b>1 · Point.</b> Hit <b>Report</b>, then click whatever's wrong.</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/03-form.png" alt="Report form with the captured element" /><br />
+      <sub><b>2 · Describe.</b> One line. paikko already grabbed the element (down to <code>file:line</code>), your state, console, network, and a screenshot.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/05-tickets.png" alt="Ticket queue grouped by status" /><br />
+      <sub><b>3 · Queue.</b> Reports land grouped by what needs you; the agent works them one at a time.</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/06-detail.png" alt="Ticket detail: source, artifacts, proposed fix" /><br />
+      <sub><b>4 · Review.</b> Exact source (<code>app/calc/Key.tsx:39:5</code>), every artifact, and the agent's fix on its own branch - accept &amp; merge or reject.</sub>
+    </td>
+  </tr>
+</table>
+
+<sub>Shots from the bundled <code>examples/calculator</code> demo.</sub>
+
 ## Thesis
 
 Current AI coding (Lovable, v0, Claude Code, etc.) is outside-in: you see a problem in
