@@ -11,10 +11,12 @@ onto rendered JSX. Capture reads them, so a point-click now yields e.g.
 AST `node.loc`, not React `__source`). Seam-guard's `provenance-present` retargeted to the
 consumer app. (Note: `.babelrc` opts the example off SWC - fine for a demo.)
 
-## 2. Drive `/paikko-run` for real  ☐
-Loop is shaken down twice by the assistant; the real test is the user invoking
-`/paikko-run` in their own Claude Code TUI against `examples/calculator` (their
-subscription). Validates the loop end-to-end on a real machine.
+## 2. Drive `/paikko-run` for real  ☑
+Ran a full loop pass WITH provenance: report on the AC key → `target.src =
+app/calc/Key.tsx:37:5` → fix-agent opened that file directly (no grep), added a
+`danger` variant, scoped the AC key red → accept → merge → verified live. Provenance
+materially helped (saved a multi-file grep to the component). Loop + provenance compose.
+(Still worth the user invoking `/paikko-run` in their own TUI as the real-world test.)
 
 ## 3. Backend trace artifact  ☐
 The DO-backed "frontend symptom → backend cause" spine is degraded locally (Durable
