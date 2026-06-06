@@ -345,13 +345,19 @@ function escapeRe(s) {
 function ruleProvenancePresent() {
   const violations = [];
 
+  // Provenance is a CONSUMER concern: the build-time data-src/data-paikko-component
+  // injection must be wired into the consumer app's build (the app whose JSX the
+  // agent loop fixes), NOT the backend. The backend renders no consumer JSX, so we
+  // check the example consumer app instead of ROOT (= packages/backend).
+  const CONSUMER_ROOT = join(ROOT, "..", "..", "examples", "calculator");
+
   const nextConfigs = [
     "next.config.js",
     "next.config.mjs",
     "next.config.ts",
     "next.config.cjs",
   ]
-    .map((f) => join(ROOT, f))
+    .map((f) => join(CONSUMER_ROOT, f))
     .filter(existsSync);
 
   const babelConfigs = [
@@ -364,7 +370,7 @@ function ruleProvenancePresent() {
     "babel.config.cjs",
     "babel.config.mjs",
   ]
-    .map((f) => join(ROOT, f))
+    .map((f) => join(CONSUMER_ROOT, f))
     .filter(existsSync);
 
   // SWC path: a non-commented swcPlugins entry whose name mentions provenance.

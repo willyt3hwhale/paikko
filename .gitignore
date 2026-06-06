@@ -5,6 +5,10 @@ build/
 *.log
 .env
 .env.local
+
+# the provenance plugin is SOURCE that happens to live in a dir named build/
+!packages/widget/src/build/
+!packages/widget/src/build/**
 .DS_Store
 *.tsbuildinfo
 prisma/dev.db

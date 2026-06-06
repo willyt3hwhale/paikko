@@ -2,14 +2,14 @@
 
 Prioritized next work. Status: ☐ todo · ◐ in progress · ☑ done.
 
-## 1. Wire the provenance plugin  ◐
-The differentiator. Reports currently capture a CSS selector but `target.src` /
-`target.component` are **null** - the plugin (`packages/widget/build/provenancePlugin.js`)
-exists but isn't hooked into the consumer app's build. Goal: rendered elements carry
-`data-src="file:line:col"` + `data-paikko-component`, capture reads them, so a click →
-`Keypad.tsx:84`, not a grep. Wire into `examples/calculator`'s build (the agent fixes
-consumer code, so src must point at consumer files). Retarget/drop the backend
-seam-guard `provenance-present` check (provenance is now a consumer concern).
+## 1. Wire the provenance plugin  ☑
+The differentiator - DONE. A Babel `.babelrc` in `examples/calculator` loads the
+provenance plugin (`packages/widget/src/build/provenancePlugin.cjs`), injecting
+`data-src="<path>:<line>:<col>"` (repo-relative to the consumer app) + `data-paikko-component`
+onto rendered JSX. Capture reads them, so a point-click now yields e.g.
+`app/calc/Key.tsx:37:5` + component `Key` instead of null. Works in dev AND build (reads
+AST `node.loc`, not React `__source`). Seam-guard's `provenance-present` retargeted to the
+consumer app. (Note: `.babelrc` opts the example off SWC - fine for a demo.)
 
 ## 2. Drive `/paikko-run` for real  ☐
 Loop is shaken down twice by the assistant; the real test is the user invoking

@@ -6,7 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./build/provenancePlugin": "./src/build/provenancePlugin.js"
+    "./build/provenancePlugin": "./src/build/provenancePlugin.cjs"
   },
   "files": [
     "src"
