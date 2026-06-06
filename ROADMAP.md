@@ -18,10 +18,14 @@ app/calc/Key.tsx:37:5` → fix-agent opened that file directly (no grep), added 
 materially helped (saved a multi-file grep to the component). Loop + provenance compose.
 (Still worth the user invoking `/paikko-run` in their own TUI as the real-world test.)
 
-## 3. Backend trace artifact  ☐
-The DO-backed "frontend symptom → backend cause" spine is degraded locally (Durable
-Objects don't run under `next dev`). Decide: accept prod-only, or build a local trace
-path. Medium value.
+## 3. Backend trace artifact  ☑
+Replaced the Durable-Object buffer with a **D1-backed trace buffer** (`TraceEntry` table,
+migration 0004): `withCapture` appends each traced request, the reports route drains at
+report time. Works under `next dev` (where DOs don't) AND prod (D1 is everywhere) - simpler
+than the DO. Verified: a session's `GET /api/tickets` (200) + `:id` (404) buffer, then a
+report drains them into a real `trace` artifact with `src` provenance. The DO is now legacy
+dead code (kept so the Workers build doesn't break) - a cleanup pass should remove the
+`SESSION_TRACE` binding from wrangler.jsonc/worker.ts/db.ts and rename the misnamed helpers.
 
 ## 4. Prod / SaaS hardening  ◐
 - ☑ `projectKey` server-side filtering - `GET /api/tickets?projectKey=X` returns one tenant;
