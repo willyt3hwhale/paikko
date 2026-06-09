@@ -166,6 +166,13 @@ npm run deploy    # build + deploy to your Workers account
   React stays on 18.3 (Next 15.5 supports both 18.x and 19.x; 18.3 is kept to
   minimise churn).
 
+## Docs
+
+- [AUTH.md](AUTH.md) - project API-key auth (opt-in multi-tenant: publishable + secret keys).
+- [PUBLISHING.md](PUBLISHING.md) - releasing `@paikko/contract` + `@paikko/widget` to npm.
+- [BILLING.md](BILLING.md) - per-project billing design (deferred).
+- [packages/widget/README.md](packages/widget/README.md) - installing + mounting the widget.
+
 ## Roadmap
 
 - **v0**: capture widget, 4 mandated seams, ticket state machine, Claude Code loop, CI guard.

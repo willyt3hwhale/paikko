@@ -1,6 +1,6 @@
 ---
 name: paikko-run
-description: "Drive the paikko branch-isolated review loop from inside an interactive Claude Code session. paikko is now a monorepo: the framework lives in packages/* (@paikko/contract, @paikko/widget, @paikko/backend) and is NEVER edited by the loop; the runner fixes the CONSUMER app (examples/calculator, or any configured consumer dir). Finds actionable tickets (open, or reviewing with a fresh user reply) oldest-first and processes ONE at a time: fixes each ticket in its own git worktree + branch off main, stands up an isolated `next dev` preview of the consumer app on an alt port for that fix alone, and parks it in reviewing. A user reply re-engages the agent on the same branch; Accept merges the branch to main and Reject discards the branch + worktree. The ticket API base is the backend (default http://localhost:8787), configurable. Runs on your TUI subscription - no headless billing."
+description: "Drive the paikko branch-isolated review loop from inside an interactive Claude Code session. paikko is now a monorepo: the framework lives in packages/* (@paikko/contract, @paikko/widget, @paikko/backend) and is NEVER edited by the loop; the runner fixes the CONSUMER app (examples/calculator, or any configured consumer dir). Finds actionable tickets (open, or reviewing with a fresh user reply) oldest-first and processes ONE at a time: fixes each ticket in its own git worktree + branch off main, stands up an isolated `next dev` preview of the consumer app on an alt port for that fix alone, and parks it in reviewing. A user reply re-engages the agent on the same branch; Accept merges the branch to main and Reject discards the branch + worktree. The ticket API base is the backend (default http://localhost:8788), configurable. Runs on your TUI subscription - no headless billing."
 trigger: /paikko-run
 ---
 
@@ -51,14 +51,14 @@ shapes.
 
 ## 0. Preconditions (check before the loop)
 
-1. **The BACKEND ticket API runs on :8787 (the review surface + intake).** The
+1. **The BACKEND ticket API runs on :8788 (the review surface + intake).** The
    user manages it (started with `npm run preview` in `packages/backend`). **The
-   skill does NOT start or kill :8787.** This is the `@paikko/backend` Workers app
+   skill does NOT start or kill :8788.** This is the `@paikko/backend` Workers app
    that serves `/api/**` and the `/tickets` review UI; reports filed from the
    consumer app land here cross-origin. Confirm it answers before looping:
 
    ```bash
-   curl -s -o /dev/null -w '%{http_code}' "http://localhost:8787/api/tickets?status=open"
+   curl -s -o /dev/null -w '%{http_code}' "http://localhost:8788/api/tickets?status=open"
    ```
 
    A `200` means go. Anything else (connection refused, non-200): stop and tell
@@ -69,8 +69,14 @@ shapes.
    > It is just the API the runner reads/writes and the review UI the human uses.
 
 2. **Config (defaults - override only if the user gave you values):**
-   - `BASE=http://localhost:8787` - the **backend** ticket API + review UI. The
+   - `BASE=http://localhost:8788` - the **backend** ticket API + review UI. The
      ticket API base is configurable; default is the local backend.
+   - `PAIKKO_SECRET_KEY` - **only if the backend runs with `PAIKKO_AUTH=required`**
+     (see `AUTH.md`). When set, the tickets API needs the project's secret key
+     (`sk_...`) as a bearer, so **add `-H "authorization: Bearer $PAIKKO_SECRET_KEY"`
+     to EVERY `$BASE/api/**` curl below** (GET, PATCH, artifacts, thread). Unset
+     (the default permissive backend) -> send no auth header, curls work as-is.
+     A `401` from any API call means this key is missing or wrong.
    - `MAIN_REPO` - this paikko monorepo checkout (the current working directory).
      The live `main` lives here; `git -C "$MAIN_REPO" ...` always targets it.
    - `CONSUMER_DIR=examples/calculator` - the consumer app, **relative to the repo
@@ -527,7 +533,7 @@ sleep loop inside one invocation.
 2. **One worktree + one isolated preview (`$ISO_PORT`) at a time.** Strictly
    sequential. Finish (park / merge / discard) the current ticket before standing
    up the next. The preview is a `next dev` of the consumer-app worktree.
-3. **The skill never touches the backend (:8787).** The user owns the backend
+3. **The skill never touches the backend (:8788).** The user owns the backend
    review server; the skill only reads/writes its ticket API. The backend is
    framework - it is never rebuilt or edited by the loop.
 4. **A user reply re-engages** (case B) on the SAME branch/worktree - no separate
