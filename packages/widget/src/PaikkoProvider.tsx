@@ -27,6 +27,12 @@ export interface PaikkoProviderProps {
   endpoint: string;
   /** Project/tenant key stamped onto every report (SaaS seam). */
   projectKey?: string | null;
+  /**
+   * The project's PUBLISHABLE api key (pk_...), forwarded to `<ReportButton>` and
+   * sent as `x-paikko-key`. Required only when the backend enforces auth
+   * (PAIKKO_AUTH=required). Public key - never pass a secret (sk_...).
+   */
+  apiKey?: string;
   /** Absolute URL of the backend review queue; omit to hide the nav pill. */
   ticketsUrl?: string;
   /** Reader for the host app's client state, snapshotted at report time. */
@@ -46,6 +52,7 @@ export interface PaikkoProviderProps {
 export function PaikkoProvider({
   endpoint,
   projectKey = null,
+  apiKey,
   ticketsUrl,
   getClientState,
   reporter,
@@ -60,6 +67,7 @@ export function PaikkoProvider({
       <ReportButton
         endpoint={endpoint}
         projectKey={projectKey}
+        apiKey={apiKey}
         getClientState={getClientState}
         reporter={reporter}
       />

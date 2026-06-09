@@ -19,17 +19,25 @@ import { withCapture } from "@/paikko/server/withCapture";
 import { listHeads } from "@/paikko/server/tickets/store";
 import { errorToResponse } from "@/paikko/server/tickets/http";
 import { withCors, corsPreflight } from "@/paikko/server/cors";
+import { authTickets } from "@/paikko/server/auth";
 
 export const GET = withCapture(
   async (req: NextRequest) => {
     const origin = req.headers.get("origin");
     try {
+      // Auth (opt-in via PAIKKO_AUTH=required): a secret key scopes the queue to
+      // its project, and that scope is authoritative (a ?projectKey query param
+      // can't widen it). Permissive (dev default) -> `project` is null.
+      const project = await authTickets(req);
+
       const statusParam = req.nextUrl.searchParams.get("status");
       const status = statusParam
         ? TicketStatusSchema.parse(statusParam)
         : undefined;
-      // Optional multi-tenant filter; absent -> all tenants (single-tenant default).
-      const projectKey = req.nextUrl.searchParams.get("projectKey") ?? undefined;
+      // Authed -> the project's own tickets only; otherwise the optional
+      // ?projectKey filter; absent -> all tenants (single-tenant default).
+      const projectKey =
+        project?.slug ?? req.nextUrl.searchParams.get("projectKey") ?? undefined;
       const heads = await listHeads(status, projectKey);
       return withCors(NextResponse.json(heads), origin);
     } catch (err) {

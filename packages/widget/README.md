@@ -56,6 +56,7 @@ export function PaikkoMount() {
 |------------------|------------------------------------|----------|-------------|
 | `endpoint`       | `string`                           | yes      | Backend reports intake URL the bundle is POSTed to. May be cross-origin. |
 | `projectKey`     | `string \| null`                   | no       | Project/tenant key stamped onto every report (SaaS seam). Defaults to `null`. |
+| `apiKey`         | `string`                           | no       | Project **publishable** key (`pk_...`), sent as `x-paikko-key`. Required only when the backend enforces auth (`PAIKKO_AUTH=required`). Public - never pass a secret key (`sk_...`). See the repo's `AUTH.md`. |
 | `ticketsUrl`     | `string`                           | no       | Absolute URL of the backend review queue. Renders a nav pill linking to it; omit to hide the pill. |
 | `getClientState` | `() => Record<string, unknown>`    | no       | Reader for your app's client state, snapshotted at report time. Pass your store's `getState` (or equivalent). Omit and client state is captured as `{}`. |
 | `reporter`       | `string`                           | no       | Who is filing the report. Defaults to `"anonymous"`. |

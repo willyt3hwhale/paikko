@@ -21,6 +21,7 @@ import {
 import { createTicketFromBundle } from "@/paikko/server/tickets/store";
 import { errorToResponse } from "@/paikko/server/tickets/http";
 import { withCors, corsPreflight } from "@/paikko/server/cors";
+import { authReports } from "@/paikko/server/auth";
 
 /** Header a cross-origin widget may use to carry the tenant/project key. */
 const PROJECT_HEADER = "x-paikko-project";
@@ -44,8 +45,16 @@ export const POST = withCapture(
         }
       }
 
-      // projectKey (SaaS seam): prefer the value the widget stamped on the
-      // bundle; fall back to the x-paikko-project header. Persisted on the ticket.
+      // Auth (opt-in via PAIKKO_AUTH=required): validate the widget's publishable
+      // key. When enforced, the resolved project's slug is authoritative - a key
+      // can only file for its own tenant - so we stamp it onto the bundle,
+      // overriding whatever projectKey the client claimed. Permissive (dev
+      // default) -> `project` is null and the client's value stands.
+      const project = await authReports(req);
+      if (project) bundle.projectKey = project.slug;
+
+      // projectKey (SaaS seam): bundle value (now the authed slug when enforced)
+      // wins; else fall back to the x-paikko-project header. Persisted on the ticket.
       const headerProject = req.headers.get(PROJECT_HEADER);
       const { id } = await createTicketFromBundle(bundle, headerProject);
       return withCors(NextResponse.json({ id }, { status: 201 }), origin);

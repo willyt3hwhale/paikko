@@ -14,9 +14,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ArtifactNameSchema } from "@paikko/contract";
 import { withCapture } from "@/paikko/server/withCapture";
-import { getArtifactPayload } from "@/paikko/server/tickets/store";
+import { getArtifactPayload, getHead } from "@/paikko/server/tickets/store";
 import { errorToResponse } from "@/paikko/server/tickets/http";
 import { withCors, corsPreflight } from "@/paikko/server/cors";
+import { authTickets, assertProjectOwns } from "@/paikko/server/auth";
 
 type Ctx = { params: Promise<{ id: string; name: string }> };
 
@@ -24,8 +25,10 @@ export const GET = withCapture(
   async (req: NextRequest, ctx: Ctx) => {
     const origin = req.headers.get("origin");
     try {
+      const project = await authTickets(req);
       const { id, name } = await ctx.params;
       const artifactName = ArtifactNameSchema.parse(name);
+      assertProjectOwns(project, await getHead(id)); // 404 if missing or other tenant
       const payload = await getArtifactPayload(id, artifactName);
       return withCors(NextResponse.json(payload), origin);
     } catch (err) {

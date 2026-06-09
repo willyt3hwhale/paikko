@@ -41,6 +41,14 @@ export const TRACE_HEADER = "x-paikko-trace";
 /** Header that carries the stable capture session id to the backend. */
 export const SESSION_HEADER = "x-paikko-session";
 
+/**
+ * Header carrying the project's PUBLISHABLE api key (pk_...) on the report POST.
+ * Public by nature (it ships in the browser); the backend only honours it when
+ * auth is enforced (PAIKKO_AUTH=required) and relies on the CORS origin allowlist
+ * as the real defense. Never put a SECRET key (sk_...) here.
+ */
+export const PUBLISHABLE_KEY_HEADER = "x-paikko-key";
+
 /** sessionStorage key under which the stable session id is persisted. */
 const SESSION_KEY = "paikko.sessionId";
 

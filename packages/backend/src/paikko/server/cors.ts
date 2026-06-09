@@ -35,7 +35,8 @@ const ALLOW_METHODS = "GET,POST,PATCH,DELETE,OPTIONS";
  * matches case-insensitively. Includes the paikko capture spine headers so the
  * widget's instrumented fetch is not blocked by preflight.
  */
-const ALLOW_HEADERS = "content-type, x-paikko-session, x-paikko-trace, x-paikko-project";
+const ALLOW_HEADERS =
+  "content-type, authorization, x-paikko-session, x-paikko-trace, x-paikko-project, x-paikko-key";
 
 /**
  * Env var holding the CORS allowlist: a comma-separated list of exact origins

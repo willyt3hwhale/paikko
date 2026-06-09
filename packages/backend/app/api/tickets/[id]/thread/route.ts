@@ -11,9 +11,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { withCapture } from "@/paikko/server/withCapture";
-import { appendThreadMessage } from "@/paikko/server/tickets/store";
+import { appendThreadMessage, getHead } from "@/paikko/server/tickets/store";
 import { errorToResponse } from "@/paikko/server/tickets/http";
 import { withCors, corsPreflight } from "@/paikko/server/cors";
+import { authTickets, assertProjectOwns } from "@/paikko/server/auth";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -26,9 +27,11 @@ export const POST = withCapture(
   async (req: NextRequest, ctx: Ctx) => {
     const origin = req.headers.get("origin");
     try {
+      const project = await authTickets(req);
       const body = await req.json();
       const { by, text } = ThreadBodySchema.parse(body);
       const { id } = await ctx.params;
+      assertProjectOwns(project, await getHead(id)); // 404 if missing or other tenant
       const head = await appendThreadMessage(id, by, text);
       const appended = head.thread[head.thread.length - 1];
       return withCors(NextResponse.json(appended), origin);

@@ -21,6 +21,26 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// SaaS auth: a tenant. Each project owns two keys (Stripe/Sentry-style):
+//   - publishableKey (pk_...) - NOT secret. The browser widget sends it on the
+//     report POST; it may only CREATE reports for this project. Origin allowlist
+//     (PAIKKO_ALLOWED_ORIGINS) is the real defense for this public key.
+//   - secretKeyHash - SHA-256 of the secret key (sk_...). The runner / review API
+//     send `Authorization: Bearer sk_...`; it grants read/patch/delete scoped to
+//     this project's tickets. The secret itself is shown ONCE at creation and only
+//     ever stored hashed.
+// `slug` is the human projectKey stamped onto every Ticket (Ticket.projectKey).
+// Auth is opt-in: enforced only when PAIKKO_AUTH=required, so the zero-config dev
+// deployment (no projects) keeps working unchanged.
+model Project {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  name           String
+  publishableKey String   @unique
+  secretKeyHash  String   @unique
+  createdAt      DateTime @default(now())
+}
+
 model Ticket {
   id             String       @id @default(cuid())
   status         String       @default("open")

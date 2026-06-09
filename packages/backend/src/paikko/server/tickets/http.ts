@@ -16,9 +16,13 @@ import {
   InvalidTransitionError,
   TicketNotFoundError,
 } from "./store";
+import { UnauthorizedError } from "../auth";
 
 /** Map a thrown value to a JSON error response with a sensible HTTP status. */
 export function errorToResponse(err: unknown): NextResponse {
+  if (err instanceof UnauthorizedError) {
+    return NextResponse.json({ error: err.message }, { status: 401 });
+  }
   if (err instanceof TicketNotFoundError || err instanceof ArtifactNotFoundError) {
     return NextResponse.json({ error: err.message }, { status: 404 });
   }

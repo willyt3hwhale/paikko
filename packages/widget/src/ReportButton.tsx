@@ -32,6 +32,7 @@ import {
   snapshotArtifacts,
   getSessionId,
   SESSION_HEADER,
+  PUBLISHABLE_KEY_HEADER,
   type CaptureConfig,
 } from "./capture";
 
@@ -60,6 +61,13 @@ export interface ReportButtonProps {
    */
   projectKey?: string | null;
   /**
+   * The project's PUBLISHABLE api key (pk_...). Sent as the `x-paikko-key`
+   * header so a backend running with auth enforced (PAIKKO_AUTH=required) accepts
+   * the report. Optional - omit for an unauthenticated backend. This key is
+   * public (it ships in the browser); never pass a secret key (sk_...).
+   */
+  apiKey?: string;
+  /**
    * Reader for the mandated client-state store. The store seam owns the store;
    * the host app passes its `getState` (or equivalent) here so capture can
    * snapshot it. Omitted -> client state is captured as `{}`.
@@ -75,6 +83,7 @@ export function ReportButton({
   reporter = "anonymous",
   endpoint,
   projectKey = null,
+  apiKey,
   getClientState,
   captureConfig,
   onReported,
@@ -196,6 +205,9 @@ export function ReportButton({
           headers: {
             "content-type": "application/json",
             [SESSION_HEADER]: getSessionId(),
+            // Publishable key for auth-enforced backends; omitted header is fine
+            // for an unauthenticated backend.
+            ...(apiKey ? { [PUBLISHABLE_KEY_HEADER]: apiKey } : null),
           },
           body: JSON.stringify(parsed.data),
         });
@@ -216,7 +228,7 @@ export function ReportButton({
         setPhase("error");
       }
     },
-    [endpoint, kind, message, onReported, projectKey, reporter, target],
+    [apiKey, endpoint, kind, message, onReported, projectKey, reporter, target],
   );
 
   const targetLabel = useMemo(() => describeTarget(target), [target]);
