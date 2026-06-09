@@ -34,8 +34,14 @@ dead code (kept so the Workers build doesn't break) - a cleanup pass should remo
   (dev default keeps localhost working), set = reflect only listed origins.
 - ☑ Publish-ready `@paikko/contract` + `@paikko/widget` (version/license/files/exports/
   publishConfig, react peerDep) + config docs (READMEs, `.env.example`).
-- ☐ Auth / billing - when launching the hosted SaaS.
-- ☐ A real DELETE/admin route (cleanup is currently raw D1).
+- ☑ Auth - project API-key auth (opt-in `PAIKKO_AUTH=required`): publishable `pk_`
+  for the browser widget (create reports), secret `sk_` for the runner/review API
+  (scoped read/patch/delete), secret stored hashed. `POST /api/projects` mints
+  projects (gated by `PAIKKO_ADMIN_TOKEN`). Permissive by default - demo unchanged.
+  See `AUTH.md`.
+- ☑ Admin/DELETE route - `DELETE /api/tickets/:id` (done earlier) + `POST
+  /api/projects` provisioning; both tenant-scoped under auth.
+- ☐ Billing - design captured in `BILLING.md`; deferred (needs Stripe creds/config).
 
 ## 5. The "looks wrong" report class  ☑
 Added a **screenshot artifact**: the widget captures the page via `html2canvas` (lazy
