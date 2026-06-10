@@ -18,7 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { withCapture } from "@/paikko/server/withCapture";
-import { createProject } from "@/paikko/server/auth";
+import { createProject, sha256Hex } from "@/paikko/server/auth";
 import { errorToResponse } from "@/paikko/server/tickets/http";
 import { withCors, corsPreflight } from "@/paikko/server/cors";
 
@@ -46,8 +46,13 @@ export const POST = withCapture(
         );
       }
       const header = req.headers.get("authorization") ?? "";
-      const presented = /^Bearer\s+(.+)$/i.exec(header.trim())?.[1];
-      if (presented !== adminToken) {
+      const presented = /^Bearer\s+(.+)$/i.exec(header.trim())?.[1] ?? "";
+      // Compare SHA-256 hashes, not the raw tokens: this admin token mints tenant
+      // keys, and a plain `!==` on the secret leaks length/prefix via timing. The
+      // hashes are fixed-length and content-independent, mirroring how secret keys
+      // are matched (sha256Hex + indexed lookup) elsewhere.
+      const [ph, ah] = await Promise.all([sha256Hex(presented), sha256Hex(adminToken)]);
+      if (ph !== ah) {
         return withCors(
           NextResponse.json({ error: "unauthorized" }, { status: 401 }),
           origin,
