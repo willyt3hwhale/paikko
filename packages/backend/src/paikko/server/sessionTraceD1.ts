@@ -24,6 +24,7 @@
 
 import type { TraceArtifact, TraceRequest } from "@paikko/contract";
 import { getPrisma } from "@/lib/db";
+import { encodePayload, decodePayload } from "@/paikko/server/tickets/store";
 
 /**
  * Append a finished {@link TraceRequest} to its session's D1 buffer. Best-effort:
@@ -35,8 +36,14 @@ export async function appendTraceEntry(
 ): Promise<void> {
   try {
     const prisma = getPrisma();
+    // base64-wrap the payload like the artifact store does: the @prisma/adapter-d1
+    // driver sniffs column types by regex and misclassifies any TEXT cell that
+    // merely CONTAINS an ISO-date substring as DateTime, then throws on read.
+    // TraceRequest payloads routinely embed ISO timestamps (query params, bodies),
+    // so a raw JSON payload silently loses the whole trace on drain. See the
+    // PAYLOAD_PREFIX note in store.ts.
     await prisma.traceEntry.create({
-      data: { sessionId, payload: JSON.stringify(request) },
+      data: { sessionId, payload: encodePayload(request) },
     });
   } catch {
     // Capture is non-blocking by contract: a lost trace request is acceptable,
@@ -60,7 +67,10 @@ export async function drainTraceEntries(
 
     const rows = await prisma.traceEntry.findMany({
       where: { sessionId },
-      orderBy: { createdAt: "asc" },
+      // createdAt is second-resolution, so requests in the same second tie; the
+      // cuid `id` is creation-monotonic, so it preserves arrival order within a
+      // second (the trace artifact promises ordered requests).
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     if (rows.length === 0) return null;
 
@@ -72,7 +82,9 @@ export async function drainTraceEntries(
     const requests: TraceRequest[] = [];
     for (const row of rows) {
       try {
-        requests.push(JSON.parse(row.payload) as TraceRequest);
+        // decodePayload handles both the base64 form and any legacy plain-JSON
+        // rows written before this wrapper existed.
+        requests.push(decodePayload(row.payload) as TraceRequest);
       } catch {
         // A single corrupt payload should not lose the whole trace; skip it.
       }

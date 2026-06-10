@@ -165,7 +165,7 @@ function jsonSize(value: unknown): number {
 const PAYLOAD_PREFIX = "b64:";
 
 /** Encode a validated payload for storage (base64, prefixed so reads can detect it). */
-function encodePayload(payload: unknown): string {
+export function encodePayload(payload: unknown): string {
   return PAYLOAD_PREFIX + Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
 }
 
@@ -176,7 +176,7 @@ function encodePayload(payload: unknown): string {
  * base64 form and any legacy plain-JSON rows. Already-decoded values (defensive)
  * pass through.
  */
-function decodePayload(stored: unknown): unknown {
+export function decodePayload(stored: unknown): unknown {
   if (typeof stored !== "string") return stored;
   const json = stored.startsWith(PAYLOAD_PREFIX)
     ? Buffer.from(stored.slice(PAYLOAD_PREFIX.length), "base64").toString("utf8")
@@ -246,7 +246,11 @@ function toHead(row: TicketRow): TicketHead {
     },
     thread: row.thread
       .map(toThreadMessage)
-      .sort((a, b) => a.at.localeCompare(b.at)),
+      // `at` is second-resolution (CURRENT_TIMESTAMP), so two messages in the same
+      // second tie; fall back to the cuid `id` (monotonic per creation) so ordering
+      // is stable. listActionable keys off the last message, so an unstable sort
+      // there could mis-decide whether to re-engage the agent.
+      .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id)),
     artifacts: toArtifactIndex(row.id, row.artifacts),
     projectKey: row.projectKey,
     branch: row.branch,
