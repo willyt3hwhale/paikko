@@ -26,6 +26,7 @@
 
 import { NextResponse } from "next/server";
 import type { CapturableRequest } from "./withCapture";
+import { authRequired } from "./auth";
 
 /** Methods the API surface exposes across the routes. */
 const ALLOW_METHODS = "GET,POST,PATCH,DELETE,OPTIONS";
@@ -77,6 +78,13 @@ function parseAllowlist(): Set<string> | null {
 function allowOrigin(origin: string | null): string | null {
   const allowlist = parseAllowlist();
   if (allowlist === null) {
+    // Fail closed under enforced auth: reflecting any origin would re-open the
+    // public-key (pk_) path to cross-origin abuse, which the allowlist is the
+    // only defense for. With auth on, an operator MUST list origins explicitly;
+    // an unset allowlist means "same-origin only" (no reflected Allow-Origin,
+    // which same-origin requests don't need). Auth off (dev) keeps the
+    // zero-config permissive reflect-any behaviour.
+    if (authRequired()) return null;
     return origin && origin.length > 0 ? origin : "*";
   }
   return origin && allowlist.has(origin) ? origin : null;

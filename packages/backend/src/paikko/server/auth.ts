@@ -12,10 +12,19 @@
  *     project's tickets. Stored ONLY as a SHA-256 hash; the plaintext is shown
  *     once at creation and never persisted.
  *
- * Auth is **opt-in**: enforced only when `PAIKKO_AUTH=required`. Unset (the
- * zero-config dev default) -> the auth functions are no-ops that return `null`,
- * so the single-tenant demo keeps working with no keys. When required, a missing
- * or bad key is a 401 ({@link UnauthorizedError}, mapped in `http.ts`).
+ * Auth is **on by default** and covers every surface. It is disabled only when
+ * `PAIKKO_AUTH=disabled` (the local single-tenant dev escape hatch, e.g. the
+ * bundled calculator demo) -> the auth functions become no-ops that return
+ * `null`. Otherwise a missing or bad credential is a 401 ({@link
+ * UnauthorizedError}, mapped in `http.ts`).
+ *
+ * Two caller shapes hit the ticket/review API, so it accepts two credentials:
+ *   - the **runner / programmatic** client sends `Authorization: Bearer sk_...`
+ *     and is scoped to its own tenant.
+ *   - the in-app **review dashboard** runs in a browser and cannot hold a secret
+ *     key, so the operator authenticates with HTTP Basic (gated at the
+ *     middleware and re-checked here) and gets full, cross-tenant access.
+ * {@link authTickets} returns a {@link Principal} discriminating the two.
  *
  * Crypto is Web Crypto (`crypto.subtle` / `crypto.getRandomValues`) so it runs
  * identically on Cloudflare Workers and under `next dev` - no Node `crypto`.
@@ -39,9 +48,63 @@ export interface AuthedProject {
   name: string;
 }
 
-/** True when key auth is enforced. Unset/anything-else -> permissive (dev default). */
+/**
+ * The authenticated caller of the ticket/review API:
+ *   - `operator`: the platform operator (Basic-auth dashboard) - full access.
+ *   - `tenant`: a secret-key client (the runner) - scoped to `project.slug`.
+ */
+export type Principal =
+  | { kind: "operator" }
+  | { kind: "tenant"; project: AuthedProject };
+
+/** The tenant slug a principal is scoped to, or `undefined` for full access. */
+export function principalSlug(principal: Principal | null): string | undefined {
+  return principal?.kind === "tenant" ? principal.project.slug : undefined;
+}
+
+/** Env var holding the operator dashboard password (Basic auth). */
+const OPERATOR_PASS_ENV = "PAIKKO_DASHBOARD_PASSWORD";
+/** Env var holding the operator dashboard username (Basic auth); defaults to "admin". */
+const OPERATOR_USER_ENV = "PAIKKO_DASHBOARD_USER";
+
+/**
+ * True when auth is enforced. ON by default; disabled ONLY by an explicit
+ * `PAIKKO_AUTH=disabled` (the local dev escape hatch). Any other value -> enforced.
+ */
 export function authRequired(): boolean {
-  return process.env.PAIKKO_AUTH === "required";
+  return process.env.PAIKKO_AUTH !== "disabled";
+}
+
+/** The configured operator credentials, or null when the dashboard login is unset. */
+function operatorCreds(): { user: string; pass: string } | null {
+  const pass = process.env[OPERATOR_PASS_ENV];
+  if (!pass) return null;
+  return { user: process.env[OPERATOR_USER_ENV] || "admin", pass };
+}
+
+/**
+ * Verify an HTTP Basic `Authorization` header against the configured operator
+ * login. Compares SHA-256 of `user:pass` on both sides so the check doesn't leak
+ * the credential length/prefix via timing. Returns false when no operator login
+ * is configured (fail closed - the dashboard stays locked).
+ */
+export async function verifyOperatorBasic(authHeader: string | null): Promise<boolean> {
+  const creds = operatorCreds();
+  if (!creds) return false;
+  const m = /^Basic\s+(.+)$/i.exec((authHeader ?? "").trim());
+  if (!m) return false;
+  let decoded: string;
+  try {
+    decoded = atob(m[1]);
+  } catch {
+    return false;
+  }
+  const idx = decoded.indexOf(":");
+  if (idx === -1) return false;
+  const presented = `${decoded.slice(0, idx)}:${decoded.slice(idx + 1)}`;
+  const expected = `${creds.user}:${creds.pass}`;
+  const [a, b] = await Promise.all([sha256Hex(presented), sha256Hex(expected)]);
+  return a === b;
 }
 
 /* ------------------------------------------------------------------ */
@@ -144,33 +207,44 @@ export async function authReports(req: Request): Promise<AuthedProject | null> {
 }
 
 /**
- * Authorize a tickets/review API request with a secret key. Permissive (returns
- * `null`) unless `PAIKKO_AUTH=required`, in which case `Authorization: Bearer
- * sk_...` must resolve to a project (else 401). The caller scopes its reads/
- * writes to the returned project's slug.
+ * Authorize a tickets/review API request. No-op (returns `null`) only when auth
+ * is disabled. Otherwise accepts either credential and returns the {@link
+ * Principal}:
+ *   - `Authorization: Basic ...` (the dashboard) -> `operator` (full access).
+ *   - `Authorization: Bearer sk_...` (the runner) -> `tenant` (scoped to its slug).
+ * Anything missing/invalid is a 401.
  */
-export async function authTickets(req: Request): Promise<AuthedProject | null> {
+export async function authTickets(req: Request): Promise<Principal | null> {
   if (!authRequired()) return null;
-  const header = req.headers.get("authorization") ?? "";
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  const header = (req.headers.get("authorization") ?? "").trim();
+  // operator (Basic) - the in-app review dashboard
+  if (/^Basic\s+/i.test(header)) {
+    if (await verifyOperatorBasic(header)) return { kind: "operator" };
+    throw new UnauthorizedError("invalid operator credentials");
+  }
+  // tenant (Bearer sk_) - the runner / programmatic clients
+  const match = /^Bearer\s+(.+)$/i.exec(header);
   const key = match?.[1];
-  if (!key) throw new UnauthorizedError("missing bearer secret key");
+  if (!key) throw new UnauthorizedError("missing credentials");
   const project = key.startsWith("sk_") ? await projectBySecretKey(key) : null;
   if (!project) throw new UnauthorizedError("invalid secret key");
-  return project;
+  return { kind: "tenant", project };
 }
 
 /**
- * Cross-tenant access guard for per-ticket routes. When a project is authed, a
- * ticket it doesn't own is reported as not-found (404) rather than forbidden
- * (403), so a secret key can't probe which ticket ids exist in other tenants.
- * No-op when `project` is null (permissive mode).
+ * Cross-tenant access guard for per-ticket routes. An `operator` principal has
+ * full access; a `tenant` principal hitting a ticket it doesn't own gets a
+ * not-found (404) rather than forbidden (403), so a secret key can't probe which
+ * ticket ids exist in other tenants. No-op when `principal` is null (auth off).
  */
 export function assertProjectOwns(
-  project: AuthedProject | null,
+  principal: Principal | null,
   head: { id: string; projectKey: string | null },
 ): void {
-  if (project && head.projectKey !== project.slug) {
+  if (
+    principal?.kind === "tenant" &&
+    head.projectKey !== principal.project.slug
+  ) {
     throw new TicketNotFoundError(head.id);
   }
 }
