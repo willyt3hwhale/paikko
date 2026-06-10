@@ -32,13 +32,22 @@ const PatchBodySchema = z
   .object({
     status: TicketStatusSchema.optional(),
     message: z
-      .object({ by: z.string().min(1), text: z.string().min(1) })
+      .object({ by: z.string().min(1).max(256), text: z.string().min(1).max(16_384) })
       .optional(),
     // Branch-isolated review fields: the agent sets these when it parks a fix in
     // `reviewing` (the git branch + the isolated preview URL "View fix" links to).
     // Both nullable - explicit `null` clears, omitted leaves unchanged.
-    branch: z.string().nullable().optional(),
-    previewUrl: z.string().nullable().optional(),
+    branch: z.string().max(512).nullable().optional(),
+    // Scheme-locked to http(s): the review UI renders this as an <a href>, and
+    // React won't sanitize a `javascript:`/`data:` value, so reject anything that
+    // isn't a real preview origin at the write boundary (the render path guards
+    // too, for values that predate this).
+    previewUrl: z
+      .string()
+      .url()
+      .refine((u) => /^https?:$/.test(new URL(u).protocol), "previewUrl must be http(s)")
+      .nullable()
+      .optional(),
   })
   .refine(
     (b) =>

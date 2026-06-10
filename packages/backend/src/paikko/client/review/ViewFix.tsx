@@ -14,9 +14,22 @@ import type { TicketHead } from "@paikko/contract";
  * URL where the proposed fix is live: the ticket's reported route on its
  * ISOLATED preview origin (`ticket.previewUrl` + the reported route). Returns
  * null when no isolated preview is up yet (the agent hasn't proposed a fix).
+ *
+ * `previewUrl` is attacker-influenceable (a PATCH sets it; in the permissive
+ * default anyone can), and React does NOT sanitize an `href`, so a
+ * `javascript:`/`data:` value would execute on click. Only http(s) origins are
+ * a valid preview, so reject anything else here - the render-time gate that
+ * matters, since a hostile value may already be persisted.
  */
 export function previewUrlForTicket(ticket: TicketHead): string | null {
   if (!ticket.previewUrl) return null;
+  let origin: URL;
+  try {
+    origin = new URL(ticket.previewUrl);
+  } catch {
+    return null;
+  }
+  if (origin.protocol !== "http:" && origin.protocol !== "https:") return null;
   return `${ticket.previewUrl}${ticket.report.route}`;
 }
 

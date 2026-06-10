@@ -26,11 +26,32 @@ import { authReports } from "@/paikko/server/auth";
 /** Header a cross-origin widget may use to carry the tenant/project key. */
 const PROJECT_HEADER = "x-paikko-project";
 
+/** Hard ceiling on the report bundle (~32MB). The per-field contract caps bound
+ * individual artifacts, but clientState/storage/network bodies are app-shaped and
+ * uncapped, so this is the backstop against a single oversized intake POST
+ * bloating D1 / pressuring the worker. Intake is anonymous in the permissive
+ * default, so the gate must not depend on auth. */
+const MAX_BODY_BYTES = 32 << 20;
+
 export const POST = withCapture(
   async (req: NextRequest) => {
     const origin = req.headers.get("origin");
     try {
-      const body = await req.json();
+      const declared = Number(req.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+        return withCors(
+          NextResponse.json({ error: "payload too large" }, { status: 413 }),
+          origin,
+        );
+      }
+      const raw = await req.text();
+      if (raw.length > MAX_BODY_BYTES) {
+        return withCors(
+          NextResponse.json({ error: "payload too large" }, { status: 413 }),
+          origin,
+        );
+      }
+      const body = JSON.parse(raw);
       const bundle = ReportBundleSchema.parse(body);
 
       // Drain the backend trace buffered for this capture session and attach it

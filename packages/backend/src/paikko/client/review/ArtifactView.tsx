@@ -238,18 +238,29 @@ function TraceView({ payload }: { payload: TraceArtifact }) {
 /* ---- screenshot ---- */
 
 function ScreenshotView({ payload }: { payload: ScreenshotArtifact }) {
+  // dataUrl is attacker-influenceable; only an inline image data: URL is valid.
+  // A remote https:/http: src would turn opening the artifact into an outbound
+  // request to an attacker host (tracking / dashboard-IP deanonymization), so
+  // refuse anything that isn't an inline image.
+  const ok = /^data:image\/(png|jpeg|jpg|gif|webp);base64,/.test(payload.dataUrl);
   return (
     <div className="flex flex-col gap-2">
       <div className="text-xs text-neutral-500">
         {payload.width}×{payload.height} · {payload.format}
       </div>
-      {/* eslint-disable-next-line @next/next/no-img-element -- data: URL, no remote loader */}
-      <img
-        src={payload.dataUrl}
-        alt="Page screenshot at report time"
-        className="max-w-full rounded border border-neutral-200"
-        style={{ maxWidth: "100%", height: "auto" }}
-      />
+      {ok ? (
+        // eslint-disable-next-line @next/next/no-img-element -- data: URL, no remote loader
+        <img
+          src={payload.dataUrl}
+          alt="Page screenshot at report time"
+          className="max-w-full rounded border border-neutral-200"
+          style={{ maxWidth: "100%", height: "auto" }}
+        />
+      ) : (
+        <p className="text-xs italic text-neutral-400">
+          Screenshot dropped: not an inline image data URL.
+        </p>
+      )}
     </div>
   );
 }

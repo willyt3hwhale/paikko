@@ -121,12 +121,13 @@ export type ReportTarget = z.infer<typeof ReportTargetSchema>;
 
 /** The user-authored core of a report: what's wrong and where. */
 export const ReportSchema = z.object({
-  /** Free-text description from the reporter. */
-  message: z.string(),
+  /** Free-text description from the reporter. Capped so a single report can't be
+   * an unbounded blob (intake has no other size gate on this field). */
+  message: z.string().max(16_384),
   /** Report category (e.g. "bug", "visual", "crash"). Free-form in v0. */
-  kind: z.string(),
+  kind: z.string().max(64),
   /** App route the report was fired from (e.g. "/cart"). */
-  route: z.string(),
+  route: z.string().max(2_048),
   /** The clicked element, resolved to selector + provenance + component. */
   target: ReportTargetSchema,
 });
@@ -136,8 +137,8 @@ export type Report = z.infer<typeof ReportSchema>;
 export const ThreadMessageSchema = z.object({
   id: z.string(),
   /** Author handle: reporter id, "agent", reviewer id, etc. */
-  by: z.string(),
-  text: z.string(),
+  by: z.string().max(256),
+  text: z.string().max(16_384),
   at: IsoTimeSchema,
 });
 export type ThreadMessage = z.infer<typeof ThreadMessageSchema>;
@@ -226,8 +227,9 @@ export const ConsoleEntrySchema = z.object({
 });
 export type ConsoleEntry = z.infer<typeof ConsoleEntrySchema>;
 
-/** Payload for the `console` artifact: the console ring buffer, oldest first. */
-export const ConsoleArtifactSchema = z.array(ConsoleEntrySchema);
+/** Payload for the `console` artifact: the console ring buffer, oldest first.
+ * Length-capped so a forged bundle can't ship an unbounded array. */
+export const ConsoleArtifactSchema = z.array(ConsoleEntrySchema).max(5_000);
 export type ConsoleArtifact = z.infer<typeof ConsoleArtifactSchema>;
 
 /* ---- network ---- */
@@ -253,8 +255,9 @@ export const NetworkEntrySchema = z.object({
 });
 export type NetworkEntry = z.infer<typeof NetworkEntrySchema>;
 
-/** Payload for the `network` artifact: last N network calls, oldest first. */
-export const NetworkArtifactSchema = z.array(NetworkEntrySchema);
+/** Payload for the `network` artifact: last N network calls, oldest first.
+ * Length-capped so a forged bundle can't ship an unbounded array. */
+export const NetworkArtifactSchema = z.array(NetworkEntrySchema).max(5_000);
 export type NetworkArtifact = z.infer<typeof NetworkArtifactSchema>;
 
 /* ---- client state ---- */
@@ -287,8 +290,9 @@ export type StorageArtifact = z.infer<typeof StorageArtifactSchema>;
  * element within it.
  */
 export const DomArtifactSchema = z.object({
-  /** Serialized DOM (full document or relevant subtree). */
-  html: z.string(),
+  /** Serialized DOM (full document or relevant subtree). Capped (~8MB) so a
+   * crafted bundle can't bloat a D1 row / OOM the worker on intake. */
+  html: z.string().max(8_000_000),
   /** Selector of the reported element within `html`. */
   targetSelector: z.string().nullable(),
   /** Viewport size at capture time. */
@@ -361,8 +365,14 @@ export type TraceArtifact = z.infer<typeof TraceArtifactSchema>;
  * is allowed as a fallback but is larger; prefer `jpeg`.
  */
 export const ScreenshotArtifactSchema = z.object({
-  /** A `data:` URL holding the base64-encoded image (e.g. `data:image/jpeg;base64,...`). */
-  dataUrl: z.string(),
+  /** A `data:` URL holding the base64-encoded image (e.g. `data:image/jpeg;base64,...`).
+   * Scheme-locked to an inline image (a remote http(s) src would turn opening
+   * the artifact into an outbound request to an attacker host) and size-capped
+   * (~12MB) so it can't be used as a DoS payload. */
+  dataUrl: z
+    .string()
+    .max(12_000_000)
+    .regex(/^data:image\/(png|jpeg|jpg|gif|webp);base64,/, "must be an inline image data URL"),
   /** Pixel width of the rendered image. */
   width: z.number().int(),
   /** Pixel height of the rendered image. */
