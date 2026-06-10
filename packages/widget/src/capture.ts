@@ -370,7 +370,7 @@ export class Capture {
       if (body == null) return null;
       if (typeof body === "string") {
         try {
-          return safeSerialize(JSON.parse(body), this.config.maxBodyChars);
+          return safeSerialize(redactDeep(JSON.parse(body)), this.config.maxBodyChars);
         } catch {
           return safeSerialize(body, this.config.maxBodyChars);
         }
@@ -389,7 +389,7 @@ export class Capture {
       if (!text) return null;
       if (ct.includes("application/json")) {
         try {
-          return safeSerialize(JSON.parse(text), this.config.maxBodyChars);
+          return safeSerialize(redactDeep(JSON.parse(text)), this.config.maxBodyChars);
         } catch {
           return safeSerialize(text, this.config.maxBodyChars);
         }
@@ -561,6 +561,36 @@ export class Capture {
 /* Stateless snapshots (no patching required)                         */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Keys whose values are likely credentials/PII. Capture ships storage, cookies
+ * and request/response bodies to the ticket backend (a possibly different
+ * origin), so anything matching here is masked BEFORE it leaves the page - the
+ * agent still sees the shape, not the secret.
+ */
+const SENSITIVE_KEY_RE =
+  /pass(?:word|wd)?|secret|token|auth|session|cookie|jwt|bearer|api[-_]?key|access[-_]?key|refresh|credential|otp|\bpin\b|ssn|card|cvv/i;
+const REDACTED = "[redacted]";
+
+/** Mask values under sensitive keys in a flat string map (storage / cookies). */
+function redactStringMap(map: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const k of Object.keys(map)) {
+    out[k] = SENSITIVE_KEY_RE.test(k) ? REDACTED : map[k];
+  }
+  return out;
+}
+
+/** Recursively mask values under sensitive keys in an arbitrary JSON value. */
+function redactDeep(value: unknown, depth = 0): unknown {
+  if (depth > 8 || value == null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((v) => redactDeep(v, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = SENSITIVE_KEY_RE.test(k) ? REDACTED : redactDeep(v, depth + 1);
+  }
+  return out;
+}
+
 /** Snapshot localStorage / sessionStorage / cookies as flat string maps. */
 export function snapshotStorage(): StorageArtifact {
   const readWebStorage = (store: Storage | undefined): Record<string, string> => {
@@ -592,9 +622,13 @@ export function snapshotStorage(): StorageArtifact {
   };
 
   return {
-    local: readWebStorage(typeof window !== "undefined" ? window.localStorage : undefined),
-    session: readWebStorage(typeof window !== "undefined" ? window.sessionStorage : undefined),
-    cookies: readCookies(),
+    local: redactStringMap(
+      readWebStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+    ),
+    session: redactStringMap(
+      readWebStorage(typeof window !== "undefined" ? window.sessionStorage : undefined),
+    ),
+    cookies: redactStringMap(readCookies()),
   };
 }
 
