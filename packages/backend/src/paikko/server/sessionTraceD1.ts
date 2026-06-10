@@ -26,9 +26,20 @@ import type { TraceArtifact, TraceRequest } from "@paikko/contract";
 import { getPrisma } from "@/lib/db";
 import { encodePayload, decodePayload } from "@/paikko/server/tickets/store";
 
+/** How long an undrained buffer row may live before the lazy sweep reclaims it. */
+const TRACE_TTL_MS = 6 * 60 * 60 * 1000; // 6h
+/** Fraction of appends that also run the TTL sweep (keeps the cost amortized). */
+const SWEEP_PROBABILITY = 0.02;
+
 /**
  * Append a finished {@link TraceRequest} to its session's D1 buffer. Best-effort:
  * swallows errors so a capture hiccup never fails the underlying request.
+ *
+ * A buffer row is normally deleted when its session is drained at report time,
+ * but requests with no `x-paikko-session` (health checks, the runner's own
+ * polling) get a synthetic session that is never drained. Without a sweep those
+ * rows accumulate forever, so a small fraction of appends opportunistically purge
+ * anything older than {@link TRACE_TTL_MS} - bounded cleanup with no cron.
  */
 export async function appendTraceEntry(
   sessionId: string,
@@ -36,6 +47,10 @@ export async function appendTraceEntry(
 ): Promise<void> {
   try {
     const prisma = getPrisma();
+    if (Math.random() < SWEEP_PROBABILITY) {
+      const cutoff = new Date(Date.now() - TRACE_TTL_MS);
+      await prisma.traceEntry.deleteMany({ where: { createdAt: { lt: cutoff } } });
+    }
     // base64-wrap the payload like the artifact store does: the @prisma/adapter-d1
     // driver sniffs column types by regex and misclassifies any TEXT cell that
     // merely CONTAINS an ISO-date substring as DateTime, then throws on read.
