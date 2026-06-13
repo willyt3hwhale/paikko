@@ -62,7 +62,7 @@ export interface ReportButtonProps {
   projectKey?: string | null;
   /**
    * The project's PUBLISHABLE api key (pk_...). Sent as the `x-paikko-key`
-   * header so a backend running with auth enforced (PAIKKO_AUTH=required) accepts
+   * header so a backend running with auth enforced (the default; off via PAIKKO_AUTH=disabled) accepts
    * the report. Optional - omit for an unauthenticated backend. This key is
    * public (it ships in the browser); never pass a secret key (sk_...).
    */

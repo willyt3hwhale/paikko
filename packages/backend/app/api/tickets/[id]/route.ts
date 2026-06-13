@@ -10,7 +10,7 @@
  * DELETE removes the ticket and its children (TraceEntry rows are session-keyed,
  * not ticket-keyed, so they are left in place) and returns 204.
  *
- * Auth (opt-in via PAIKKO_AUTH=required): a secret key scopes every operation to
+ * Auth (enforced by default; off only via PAIKKO_AUTH=disabled): a secret key scopes every operation to
  * its project. A ticket owned by another tenant is treated as not-found (404) so
  * existence isn't leaked across tenants. Permissive (dev default) -> no scoping.
  *

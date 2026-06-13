@@ -44,7 +44,7 @@ export const SESSION_HEADER = "x-paikko-session";
 /**
  * Header carrying the project's PUBLISHABLE api key (pk_...) on the report POST.
  * Public by nature (it ships in the browser); the backend only honours it when
- * auth is enforced (PAIKKO_AUTH=required) and relies on the CORS origin allowlist
+ * auth is enforced (the default; off only via PAIKKO_AUTH=disabled) and relies on the CORS origin allowlist
  * as the real defense. Never put a SECRET key (sk_...) here.
  */
 export const PUBLISHABLE_KEY_HEADER = "x-paikko-key";
@@ -277,8 +277,8 @@ export class Capture {
   private pushConsole(level: ConsoleMethod, args: unknown[]): void {
     const entry: ConsoleEntry = {
       level,
-      message: formatConsoleMessage(args),
-      args: args.map((a) => safeSerialize(a, this.config.maxBodyChars)),
+      message: redactText(formatConsoleMessage(args)),
+      args: args.map((a) => safeSerialize(redactConsoleArg(a), this.config.maxBodyChars)),
       at: now(),
     };
     this.consoleBuffer.push(entry);
@@ -336,7 +336,7 @@ export class Capture {
       const entry: NetworkEntry = {
         traceId,
         method,
-        url,
+        url: redactUrl(url),
         status: null,
         reqBody,
         resBody: null,
@@ -372,7 +372,7 @@ export class Capture {
         try {
           return safeSerialize(redactDeep(JSON.parse(body)), this.config.maxBodyChars);
         } catch {
-          return safeSerialize(body, this.config.maxBodyChars);
+          return safeSerialize(redactBodyString(body), this.config.maxBodyChars);
         }
       }
       // FormData / Blob / etc. - record a marker rather than the raw object.
@@ -391,10 +391,10 @@ export class Capture {
         try {
           return safeSerialize(redactDeep(JSON.parse(text)), this.config.maxBodyChars);
         } catch {
-          return safeSerialize(text, this.config.maxBodyChars);
+          return safeSerialize(redactBodyString(text), this.config.maxBodyChars);
         }
       }
-      return safeSerialize(text, this.config.maxBodyChars);
+      return safeSerialize(redactBodyString(text), this.config.maxBodyChars);
     } catch {
       return null;
     }
@@ -465,7 +465,7 @@ export class Capture {
         const entry: NetworkEntry = {
           traceId: meta.traceId,
           method: meta.method,
-          url: meta.url,
+          url: redactUrl(meta.url),
           status: null,
           reqBody: self.serializeXhrBody(body),
           resBody: null,
@@ -492,9 +492,9 @@ export class Capture {
     if (body == null) return null;
     if (typeof body === "string") {
       try {
-        return safeSerialize(JSON.parse(body), this.config.maxBodyChars);
+        return safeSerialize(redactDeep(JSON.parse(body)), this.config.maxBodyChars);
       } catch {
-        return safeSerialize(body, this.config.maxBodyChars);
+        return safeSerialize(redactBodyString(body), this.config.maxBodyChars);
       }
     }
     return `[${(body as object).constructor?.name ?? typeof body}]`;
@@ -507,12 +507,12 @@ export class Capture {
         const text = xhr.responseText;
         if (!text) return null;
         try {
-          return safeSerialize(JSON.parse(text), this.config.maxBodyChars);
+          return safeSerialize(redactDeep(JSON.parse(text)), this.config.maxBodyChars);
         } catch {
-          return safeSerialize(text, this.config.maxBodyChars);
+          return safeSerialize(redactBodyString(text), this.config.maxBodyChars);
         }
       }
-      if (type === "json") return safeSerialize(xhr.response, this.config.maxBodyChars);
+      if (type === "json") return safeSerialize(redactDeep(xhr.response), this.config.maxBodyChars);
       return `[responseType:${type}]`;
     } catch {
       return null;
@@ -545,7 +545,10 @@ export class Capture {
   snapshotClientState(): ClientStateArtifact {
     try {
       const state = this.config.getClientState();
-      return (safeSerialize(state, this.config.maxBodyChars) as ClientStateArtifact) ?? {};
+      // Redact: app stores (Redux/Zustand) routinely hold access tokens / session.
+      return (
+        (safeSerialize(redactDeep(state), this.config.maxBodyChars) as ClientStateArtifact) ?? {}
+      );
     } catch {
       return {};
     }
@@ -561,34 +564,143 @@ export class Capture {
 /* Stateless snapshots (no patching required)                         */
 /* ------------------------------------------------------------------ */
 
-/**
- * Keys whose values are likely credentials/PII. Capture ships storage, cookies
- * and request/response bodies to the ticket backend (a possibly different
- * origin), so anything matching here is masked BEFORE it leaves the page - the
- * agent still sees the shape, not the secret.
+/*
+ * Redaction. Capture ships storage, cookies, client state, console, and
+ * request/response bodies/URLs to the ticket backend (a possibly different
+ * origin), so credentials/PII are masked BEFORE they leave the page - the agent
+ * still sees the SHAPE, not the secret. Two complementary passes:
+ *   1. by KEY - a property/param/storage key whose name names a secret.
+ *   2. by VALUE - a string that LOOKS like a secret (JWT, known token prefixes,
+ *      long high-entropy blobs) regardless of its key, since apps routinely store
+ *      a token under a benign key like `data`.
+ * Key matching is token-based (split camelCase/snake/kebab and match whole
+ * tokens) so it does NOT over-redact benign keys like `author`, `dashboard`,
+ * `cardId`, `oauth_client_id` that merely contain a sensitive substring.
  */
-const SENSITIVE_KEY_RE =
-  /pass(?:word|wd)?|secret|token|auth|session|cookie|jwt|bearer|api[-_]?key|access[-_]?key|refresh|credential|otp|\bpin\b|ssn|card|cvv/i;
 const REDACTED = "[redacted]";
 
-/** Mask values under sensitive keys in a flat string map (storage / cookies). */
+/** Key name-segments that denote a secret/PII value. Matched as whole tokens. */
+const SENSITIVE_TOKENS = new Set([
+  "password", "passwd", "pwd", "pass", "secret", "secrets", "token", "tokens",
+  "auth", "authorization", "jwt", "bearer", "apikey", "apitoken", "accesskey",
+  "accesstoken", "refreshtoken", "refresh", "session", "sessionid", "sid",
+  "cookie", "credential", "credentials", "privatekey", "clientsecret", "otp",
+  "pin", "ssn", "cvv", "cvc", "cardnumber", "creditcard", "pan",
+]);
+/** Unambiguous compound substrings (no benign collisions) to also catch. */
+const SENSITIVE_KEY_SUBSTR =
+  /password|passwd|secret|api[-_]?key|access[-_]?token|refresh[-_]?token|client[-_]?secret|private[-_]?key|credential/i;
+
+/** Split a key into lowercase word tokens across camelCase / snake / kebab. */
+function keyTokens(key: string): string[] {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^A-Za-z0-9]+/)
+    .map((t) => t.toLowerCase())
+    .filter(Boolean);
+}
+
+/** True when a key NAME denotes a secret (token-exact, or unambiguous substring). */
+function isSensitiveKey(key: string): boolean {
+  if (keyTokens(key).some((t) => SENSITIVE_TOKENS.has(t))) return true;
+  return SENSITIVE_KEY_SUBSTR.test(key);
+}
+
+const JWT_RE = /eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}/;
+/** Known secret-token prefixes: Stripe/OpenAI sk_, GitHub gh*_, AWS AKIA, Google AIza, Slack xox*. */
+const TOKEN_PREFIX_RE =
+  /\b(?:sk|rk)[-_][A-Za-z0-9]{12,}\b|\bgh[pousr]_[A-Za-z0-9]{16,}\b|\bAKIA[0-9A-Z]{16}\b|\bAIza[0-9A-Za-z_-]{20,}\b|\bxox[baprs]-[0-9A-Za-z-]{8,}\b/;
+
+/** True when a STRING VALUE looks like a secret regardless of the key it's under. */
+function looksLikeSecretValue(s: unknown): boolean {
+  if (typeof s !== "string" || s.length < 16) return false;
+  if (JWT_RE.test(s) || TOKEN_PREFIX_RE.test(s)) return true;
+  // Long, spaceless, base64url/hex blob with >=2 character classes (or pure hex):
+  // catches opaque access tokens stored under benign keys, without masking prose.
+  if (s.length >= 32 && !/\s/.test(s) && /^[A-Za-z0-9._\-+/=]+$/.test(s)) {
+    const classes = [/[a-z]/, /[A-Z]/, /[0-9]/].filter((re) => re.test(s)).length;
+    return classes >= 2 || /^[0-9a-f]{32,}$/i.test(s);
+  }
+  return false;
+}
+
+/** Mask secret-shaped substrings inline within a free-text string (console, non-JSON bodies). */
+function redactText(s: string): string {
+  if (!s) return s;
+  return s
+    .replace(new RegExp(JWT_RE, "g"), REDACTED)
+    .replace(new RegExp(TOKEN_PREFIX_RE, "g"), REDACTED)
+    .replace(
+      /\b(bearer|token|password|secret|api[-_]?key)\b(\s*[:=]\s*|\s+)([^\s"',;&)]{8,})/gi,
+      (_m, label, sep) => `${label}${sep}${REDACTED}`,
+    );
+}
+
+/** Mask a flat string map (storage / cookies) by key name OR value shape. */
 function redactStringMap(map: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const k of Object.keys(map)) {
-    out[k] = SENSITIVE_KEY_RE.test(k) ? REDACTED : map[k];
+    out[k] = isSensitiveKey(k) || looksLikeSecretValue(map[k]) ? REDACTED : map[k];
   }
   return out;
 }
 
-/** Recursively mask values under sensitive keys in an arbitrary JSON value. */
+/** Recursively mask an arbitrary JSON value: by key name, and by leaf-value shape. */
 function redactDeep(value: unknown, depth = 0): unknown {
-  if (depth > 8 || value == null || typeof value !== "object") return value;
+  if (depth > 8) return value;
+  if (typeof value === "string") return looksLikeSecretValue(value) ? REDACTED : value;
+  if (value == null || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map((v) => redactDeep(v, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    out[k] = SENSITIVE_KEY_RE.test(k) ? REDACTED : redactDeep(v, depth + 1);
+    out[k] = isSensitiveKey(k) ? REDACTED : redactDeep(v, depth + 1);
   }
   return out;
+}
+
+/** Mask sensitive query params (by name or value shape) in a URL string. */
+function redactUrl(url: string): string {
+  try {
+    const base = typeof window !== "undefined" ? window.location?.href : undefined;
+    const u = new URL(url, base);
+    let changed = false;
+    for (const key of [...u.searchParams.keys()]) {
+      if (isSensitiveKey(key) || looksLikeSecretValue(u.searchParams.get(key) ?? "")) {
+        u.searchParams.set(key, REDACTED);
+        changed = true;
+      }
+    }
+    return changed ? u.toString() : url;
+  } catch {
+    return url;
+  }
+}
+
+/** Redact a non-JSON request/response body string: form-urlencoded params, else free text. */
+function redactBodyString(s: string): string {
+  // form-urlencoded shape: key=value(&key=value)*, no whitespace.
+  if (/^[^=&\s]+=[^&\s]*(?:&[^=&\s]+=[^&\s]*)*$/.test(s)) {
+    try {
+      const p = new URLSearchParams(s);
+      let changed = false;
+      for (const key of [...p.keys()]) {
+        if (isSensitiveKey(key) || looksLikeSecretValue(p.get(key) ?? "")) {
+          p.set(key, REDACTED);
+          changed = true;
+        }
+      }
+      if (changed) return p.toString();
+    } catch {
+      /* fall through to text redaction */
+    }
+  }
+  return redactText(s);
+}
+
+/** Redact a single console argument: objects deep, strings by shape + inline. */
+function redactConsoleArg(a: unknown): unknown {
+  if (typeof a === "string") return looksLikeSecretValue(a) ? REDACTED : redactText(a);
+  return redactDeep(a);
 }
 
 /** Snapshot localStorage / sessionStorage / cookies as flat string maps. */

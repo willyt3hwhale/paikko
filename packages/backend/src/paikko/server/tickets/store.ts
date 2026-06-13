@@ -381,6 +381,17 @@ export async function createTicketFromBundle(
 /* Reads                                                              */
 /* ------------------------------------------------------------------ */
 
+/*
+ * TENANT-SCOPING INVARIANT (load-bearing): the per-ticket functions below that
+ * take a bare `id` - `getHead`, `getArtifactPayload`, `patchTicket`,
+ * `appendThreadMessage`, `deleteTicket` - do NOT themselves enforce tenant
+ * ownership. They are safe ONLY because every route calls
+ * `assertProjectOwns(principal, head)` (see ../auth) BEFORE invoking them under
+ * enforced auth. Any NEW route that calls these must do the same guard first, or
+ * it will leak/modify across tenants. `listHeads`/`listActionable` DO take the
+ * scope explicitly (the `projectKey` param) and are safe to call directly.
+ */
+
 /**
  * List tier-1 heads, optionally filtered by status. This is the queue the agent
  * runner polls (e.g. status="open"). Returns refs/summaries only - never the

@@ -63,8 +63,18 @@ function parseAllowlist(): Set<string> | null {
     .split(",")
     .map((o) => o.trim())
     .filter((o) => o.length > 0);
-  if (entries.length === 0 || entries.includes("*")) return null; // "*" -> permissive
-  return new Set(entries);
+  const explicit = entries.filter((o) => o !== "*");
+  // Only "*" (or empty) -> permissive. A "*" MIXED with real origins is almost
+  // always a config slip, and going fully open (reflect any origin, with
+  // credentials) is the unsafe failure - so fail SAFE: drop the "*" and treat the
+  // rest as a strict allowlist, with a warning.
+  if (explicit.length === 0) return null; // bare "*" / empty -> permissive
+  if (entries.length !== explicit.length) {
+    console.warn(
+      `[paikko cors] ${ALLOWED_ORIGINS_ENV} mixes "*" with explicit origins; ignoring "*" and enforcing the allowlist.`,
+    );
+  }
+  return new Set(explicit);
 }
 
 /**

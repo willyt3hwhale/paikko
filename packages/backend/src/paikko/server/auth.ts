@@ -32,6 +32,12 @@
 
 import { getPrisma } from "@/lib/db";
 import { TicketNotFoundError } from "@/paikko/server/tickets/store";
+import { sha256Hex, verifyOperatorBasic } from "@/paikko/server/operatorAuth";
+
+// Re-export so the rest of the codebase imports these from one place (auth.ts),
+// while their edge-safe definitions live in operatorAuth.ts (no Prisma) so
+// middleware.ts can share them without pulling Prisma into the edge runtime.
+export { sha256Hex, verifyOperatorBasic };
 
 /** Thrown on a missing/invalid key when auth is enforced. Mapped to 401. */
 export class UnauthorizedError extends Error {
@@ -62,49 +68,12 @@ export function principalSlug(principal: Principal | null): string | undefined {
   return principal?.kind === "tenant" ? principal.project.slug : undefined;
 }
 
-/** Env var holding the operator dashboard password (Basic auth). */
-const OPERATOR_PASS_ENV = "PAIKKO_DASHBOARD_PASSWORD";
-/** Env var holding the operator dashboard username (Basic auth); defaults to "admin". */
-const OPERATOR_USER_ENV = "PAIKKO_DASHBOARD_USER";
-
 /**
  * True when auth is enforced. ON by default; disabled ONLY by an explicit
  * `PAIKKO_AUTH=disabled` (the local dev escape hatch). Any other value -> enforced.
  */
 export function authRequired(): boolean {
   return process.env.PAIKKO_AUTH !== "disabled";
-}
-
-/** The configured operator credentials, or null when the dashboard login is unset. */
-function operatorCreds(): { user: string; pass: string } | null {
-  const pass = process.env[OPERATOR_PASS_ENV];
-  if (!pass) return null;
-  return { user: process.env[OPERATOR_USER_ENV] || "admin", pass };
-}
-
-/**
- * Verify an HTTP Basic `Authorization` header against the configured operator
- * login. Compares SHA-256 of `user:pass` on both sides so the check doesn't leak
- * the credential length/prefix via timing. Returns false when no operator login
- * is configured (fail closed - the dashboard stays locked).
- */
-export async function verifyOperatorBasic(authHeader: string | null): Promise<boolean> {
-  const creds = operatorCreds();
-  if (!creds) return false;
-  const m = /^Basic\s+(.+)$/i.exec((authHeader ?? "").trim());
-  if (!m) return false;
-  let decoded: string;
-  try {
-    decoded = atob(m[1]);
-  } catch {
-    return false;
-  }
-  const idx = decoded.indexOf(":");
-  if (idx === -1) return false;
-  const presented = `${decoded.slice(0, idx)}:${decoded.slice(idx + 1)}`;
-  const expected = `${creds.user}:${creds.pass}`;
-  const [a, b] = await Promise.all([sha256Hex(presented), sha256Hex(expected)]);
-  return a === b;
 }
 
 /* ------------------------------------------------------------------ */
@@ -118,15 +87,6 @@ function randomToken(bytes = 24): string {
   let bin = "";
   for (const b of buf) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-/** SHA-256 hex of a string (for hashing the secret key at rest). */
-export async function sha256Hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 /** Mint a fresh key pair: a public `pk_...` and a secret `sk_...` (+ its hash). */
@@ -192,10 +152,10 @@ async function projectBySecretKey(key: string): Promise<AuthedProject | null> {
 export const PUBLISHABLE_HEADER = "x-paikko-key";
 
 /**
- * Authorize a report-intake request. Permissive (returns `null`) unless
- * `PAIKKO_AUTH=required`, in which case the `x-paikko-key` publishable key must
- * resolve to a project (else 401). When it resolves, the caller stamps the
- * project's slug as the ticket's `projectKey`.
+ * Authorize a report-intake request. Permissive (returns `null`) only when auth
+ * is disabled (`PAIKKO_AUTH=disabled`); otherwise (the default) the `x-paikko-key`
+ * publishable key must resolve to a project (else 401). When it resolves, the
+ * caller stamps the project's slug as the ticket's `projectKey`.
  */
 export async function authReports(req: Request): Promise<AuthedProject | null> {
   if (!authRequired()) return null;

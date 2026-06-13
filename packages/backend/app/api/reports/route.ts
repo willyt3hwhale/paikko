@@ -45,7 +45,9 @@ export const POST = withCapture(
         );
       }
       const raw = await req.text();
-      if (raw.length > MAX_BODY_BYTES) {
+      // Measure BYTES, not UTF-16 length: a multibyte body can be ~3x its char
+      // count, so a char check would let through up to 3x the intended ceiling.
+      if (Buffer.byteLength(raw, "utf8") > MAX_BODY_BYTES) {
         return withCors(
           NextResponse.json({ error: "payload too large" }, { status: 413 }),
           origin,
@@ -66,7 +68,7 @@ export const POST = withCapture(
         }
       }
 
-      // Auth (opt-in via PAIKKO_AUTH=required): validate the widget's publishable
+      // Auth (enforced by default; off only via PAIKKO_AUTH=disabled): validate the widget's publishable
       // key. When enforced, the resolved project's slug is authoritative - a key
       // can only file for its own tenant - so we stamp it onto the bundle,
       // overriding whatever projectKey the client claimed. Permissive (dev

@@ -147,7 +147,9 @@ npm run deploy    # build + deploy to your Workers account
   proxy so `getCloudflareContext()` resolves the `DB` binding against local D1
   state. Run the `--local` migration first so the local D1 has the tables. The
   whole report/trace path runs here (trace is D1, not a Durable Object), so most
-  iteration needs nothing heavier.
+  iteration needs nothing heavier. The `dev` script sets `PAIKKO_AUTH=disabled`
+  so the bundled calculator demo works keyless out of the box; **production
+  (`deploy`/`preview`) keeps auth ON by default** - see [AUTH.md](AUTH.md).
 - `npm run preview` runs the real OpenNext build under `wrangler dev` - the
   highest-fidelity local environment (real D1), closest to production.
 
@@ -168,7 +170,7 @@ npm run deploy    # build + deploy to your Workers account
 
 ## Docs
 
-- [AUTH.md](AUTH.md) - project API-key auth (opt-in multi-tenant: publishable + secret keys).
+- [AUTH.md](AUTH.md) - project API-key auth (multi-tenant, enforced by default: publishable + secret keys).
 - [PUBLISHING.md](PUBLISHING.md) - releasing `@paikko/contract` + `@paikko/widget` to npm.
 - [BILLING.md](BILLING.md) - per-project billing design (deferred).
 - [packages/widget/README.md](packages/widget/README.md) - installing + mounting the widget.

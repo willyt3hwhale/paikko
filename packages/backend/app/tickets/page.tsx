@@ -8,9 +8,12 @@
  * artifacts are fetched lazily from inside the single-ticket view, never here.
  */
 
+import { headers } from "next/headers";
 import { type TicketHead } from "@paikko/contract";
 import { TicketList } from "@/paikko/client/review";
 import { listHeads } from "@/paikko/server/tickets/store";
+import { authRequired, verifyOperatorBasic } from "@/paikko/server/auth";
+import { UnauthorizedPage } from "@/paikko/client/review/Unauthorized";
 
 // Always reflect the live queue; tickets change as the agent works them.
 export const dynamic = "force-dynamic";
@@ -26,6 +29,12 @@ export default async function TicketsPage({
 }: {
   searchParams: Promise<{ projectKey?: string | string[] }>;
 }) {
+  // Defense in depth: middleware gates this route, but never read the DB on an
+  // unauthenticated request even if the edge gate is bypassed/misconfigured.
+  if (authRequired() && !(await verifyOperatorBasic((await headers()).get("authorization")))) {
+    return <UnauthorizedPage />;
+  }
+
   const { projectKey } = await searchParams;
   const tenant = Array.isArray(projectKey) ? projectKey[0] : projectKey;
 

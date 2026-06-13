@@ -30,7 +30,7 @@ export interface PaikkoProviderProps {
   /**
    * The project's PUBLISHABLE api key (pk_...), forwarded to `<ReportButton>` and
    * sent as `x-paikko-key`. Required only when the backend enforces auth
-   * (PAIKKO_AUTH=required). Public key - never pass a secret (sk_...).
+   * (enforced by default; off via PAIKKO_AUTH=disabled). Public key - never pass a secret (sk_...).
    */
   apiKey?: string;
   /** Absolute URL of the backend review queue; omit to hide the nav pill. */

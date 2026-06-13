@@ -16,6 +16,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { verifyOperatorBasic } from "@/paikko/server/operatorAuth";
 
 export const config = {
   matcher: ["/tickets/:path*", "/api/tickets/:path*"],
@@ -28,7 +29,7 @@ function challenge(): NextResponse {
   });
 }
 
-export function middleware(req: NextRequest): NextResponse {
+export async function middleware(req: NextRequest): Promise<NextResponse> {
   // Auth off -> dev, no gate.
   if (process.env.PAIKKO_AUTH === "disabled") return NextResponse.next();
 
@@ -41,23 +42,9 @@ export function middleware(req: NextRequest): NextResponse {
   // route's authTickets validates it (and scopes to the tenant).
   if (/^Bearer\s+/i.test(header)) return NextResponse.next();
 
-  // Everything else must present the operator Basic credentials.
-  const pass = process.env.PAIKKO_DASHBOARD_PASSWORD;
-  if (!pass) return challenge(); // fail closed: dashboard login not configured
-  const user = process.env.PAIKKO_DASHBOARD_USER || "admin";
-
-  const m = /^Basic\s+(.+)$/i.exec(header);
-  if (!m) return challenge();
-  let decoded: string;
-  try {
-    decoded = atob(m[1]);
-  } catch {
-    return challenge();
-  }
-  const idx = decoded.indexOf(":");
-  if (idx === -1) return challenge();
-  if (decoded.slice(0, idx) !== user || decoded.slice(idx + 1) !== pass) {
-    return challenge();
-  }
-  return NextResponse.next();
+  // Everything else must present the operator Basic credentials. Uses the shared
+  // constant-time hashed compare (operatorAuth) - same check as the route layer,
+  // edge-safe (no Prisma). Fails closed when no dashboard login is configured.
+  if (await verifyOperatorBasic(header)) return NextResponse.next();
+  return challenge();
 }
