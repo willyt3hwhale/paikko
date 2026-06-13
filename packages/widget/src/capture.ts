@@ -607,14 +607,25 @@ function isSensitiveKey(key: string): boolean {
 }
 
 const JWT_RE = /eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}/;
-/** Known secret-token prefixes: Stripe/OpenAI sk_, GitHub gh*_, AWS AKIA, Google AIza, Slack xox*. */
+/**
+ * Known secret-token prefixes. Stripe/OpenAI `sk_`/`sk-` allow INTERNAL `_`/`-`
+ * in the run so `sk_live_...`/`sk_test_...` are caught (their second underscore
+ * would otherwise cut the run short). Also GitHub gh*_, AWS AKIA, Google AIza,
+ * Slack xox*.
+ */
 const TOKEN_PREFIX_RE =
-  /\b(?:sk|rk)[-_][A-Za-z0-9]{12,}\b|\bgh[pousr]_[A-Za-z0-9]{16,}\b|\bAKIA[0-9A-Z]{16}\b|\bAIza[0-9A-Za-z_-]{20,}\b|\bxox[baprs]-[0-9A-Za-z-]{8,}\b/;
+  /\b(?:sk|rk)[-_][A-Za-z0-9][A-Za-z0-9_-]{10,}\b|\bgh[pousr]_[A-Za-z0-9]{16,}\b|\bAKIA[0-9A-Z]{16}\b|\bAIza[0-9A-Za-z_-]{20,}\b|\bxox[baprs]-[0-9A-Za-z-]{8,}\b/;
+
+/** A canonical UUID - an entity id, not a secret; exempt from the entropy heuristic. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** True when a STRING VALUE looks like a secret regardless of the key it's under. */
 function looksLikeSecretValue(s: unknown): boolean {
   if (typeof s !== "string" || s.length < 16) return false;
   if (JWT_RE.test(s) || TOKEN_PREFIX_RE.test(s)) return true;
+  // UUIDs are 36-char hyphenated entity ids - keep them so the agent can still
+  // follow `GET /orders/<uuid>` etc. (they'd otherwise trip the entropy branch).
+  if (UUID_RE.test(s)) return false;
   // Long, spaceless, base64url/hex blob with >=2 character classes (or pure hex):
   // catches opaque access tokens stored under benign keys, without masking prose.
   if (s.length >= 32 && !/\s/.test(s) && /^[A-Za-z0-9._\-+/=]+$/.test(s)) {
